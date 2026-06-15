@@ -1,0 +1,12 @@
+# Runtime dependencies for the OnStep WiFi hand controller (Raspberry Pi Zero W).
+#
+# On the Pi (Raspberry Pi OS Lite Bookworm, ARMv6) these resolve to prebuilt
+# piwheels where available. luma.lcd pulls in luma.core + Pillow.
+luma.lcd>=2.11
+gpiozero>=2.0
+lgpio>=0.2          # gpiozero backend on Bookworm (works on Pi Zero/4; not Pi 5 only)
+PyYAML>=6.0
+
+# Note: Pillow is pulled in transitively by luma.lcd. On the Pi it installs from
+# piwheels (no source build). On a dev machine for protocol unit tests, none of
+# the above are required.

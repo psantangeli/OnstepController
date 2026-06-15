@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Local config overrides
+config.local.yaml
+
+# Runtime: last discovered mount IP
+.discovered_host
+
+# 3D-printable case design (third-party download; kept local only)
+case/
+
+# Editor / OS
+.DS_Store

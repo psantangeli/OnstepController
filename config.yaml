@@ -1,0 +1,57 @@
+# OnStep hand-controller configuration.
+#
+# Copy to config.local.yaml to override locally without touching version control,
+# or edit this file directly. Values here are the committed defaults.
+
+mount:
+  # "auto" = discover the mount on whatever network we join (recommended: your
+  # SSID is constant but the subnet varies home/field). Or set a fixed IP here.
+  host: "auto"
+  port: 9999                # OnStep LX200 command port (9996-9999 valid; 9999 = standard)
+  connect_timeout: 4.0      # seconds for socket connect/read before treating as failed
+  # Reconnect backoff (seconds): starts at min, doubles up to max, with jitter.
+  backoff_min: 0.5
+  backoff_max: 8.0
+
+  # Network discovery (used when host: "auto"). Cascade: cached IP -> mDNS
+  # hostname -> subnet sweep, confirming each candidate with :GVP#.
+  discovery:
+    hostnames: ["onstep.local", "onstepsws.local"]  # mDNS names (ESP32 + avahi)
+    subnet_prefix: 24       # sweep size if the real netmask can't be detected (/24)
+    scan_timeout: 0.3       # per-host connect timeout during the sweep (seconds)
+    cache: true             # remember the last good IP across restarts
+
+poll:
+  hz: 2.0                   # status poll rate (:GU# / :GR# / :GD#). 1-3 Hz is plenty.
+
+ui:
+  fps: 5.0                  # max UI redraw rate; redraws happen on change anyway
+  spi_hz: 32000000          # ST7789 SPI clock (32 MHz; can push toward 48-62 MHz)
+  rotation: 0               # 0/1/2/3 -- set to match how the HAT is mounted
+
+# Slew-rate cycle order (KEY1 = slower, KEY3 = faster). LX200 rate codes:
+#   RG guide(1x)  RC center(8x)  RM find(20x)  RS slew(max)
+slew_rates: ["RG", "RC", "RM", "RS"]
+default_rate_index: 1       # start at centering rate
+
+# Tracking modes cycled by the centre (joystick press) button, in order.
+# Valid: off, sidereal, solar, lunar, king. Add "king" if you want it.
+tracking_modes: ["off", "sidereal", "solar", "lunar"]
+default_tracking_index: 0   # start with tracking off
+
+# BCM pin map for the Waveshare 1.3" LCD HAT. Verified from Waveshare pins.h.
+# All inputs are active-low with internal pull-ups.
+pins:
+  # Display (SPI0, /dev/spidev0.0, CE0)
+  lcd_dc: 25
+  lcd_rst: 27
+  lcd_bl: 24
+  # Inputs
+  joy_up: 6
+  joy_down: 19
+  joy_left: 5
+  joy_right: 26
+  joy_press: 13
+  key1: 21
+  key2: 20
+  key3: 16

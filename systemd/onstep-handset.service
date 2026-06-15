@@ -1,0 +1,17 @@
+[Unit]
+Description=OnStep WiFi hand controller
+# Ordering + requirement so the app starts once the network is actually up.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=peter
+WorkingDirectory=/home/peter/onstepController
+# Full paths required. Uses the project venv created by scripts/install.sh.
+ExecStart=/home/peter/onstepController/.venv/bin/python -m onstep_handset.main
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
