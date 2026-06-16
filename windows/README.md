@@ -16,15 +16,15 @@ It uses the same discovery cascade as the Pi hand controller:
 
 1. **Copy the script** to the telescope PC, e.g. `C:\Tools\OnStep\Find-OnStep.ps1`.
 
-2. **Register it to run at logon** (from an **Administrator** PowerShell — editing
-   the hosts file requires elevation):
+2. **Register it to run at logon** (it self-elevates with a UAC prompt — no need
+   to open an Administrator PowerShell first):
 
    ```powershell
    powershell -ExecutionPolicy Bypass -File C:\Tools\OnStep\Find-OnStep.ps1 -Install
    ```
 
-   This creates a Scheduled Task ("OnStep Discovery") that runs at logon, elevated,
-   15 s after login so Wi-Fi has time to associate.
+   This creates a Scheduled Task ("OnStep Discovery") that runs at logon, elevated
+   (RunLevel Highest), 15 s after login so Wi-Fi has time to associate.
 
 3. **Point your driver at the hostname.** In the ASCOM OnStep/LX200 driver setup
    (as used by NINA, SGP, PHD2, etc.):
@@ -39,16 +39,28 @@ your driver connects by name.
 
 ## Running it manually
 
+Always launch it **through `powershell.exe` with `-ExecutionPolicy Bypass`** —
+Windows blocks `.ps1` files by default, so running `.\Find-OnStep.ps1` directly
+fails with *"running scripts is disabled on this system."* The script then
+**self-elevates** (UAC prompt) so it can write the hosts file — you do *not* need
+to start an Administrator PowerShell yourself.
+
 ```powershell
-# Run discovery now (Administrator PowerShell, to write the hosts file):
+# Run discovery now (pops a UAC prompt to elevate, then updates hosts):
 powershell -ExecutionPolicy Bypass -File .\Find-OnStep.ps1
 
-# Remove the startup task:
+# Register / remove the logon startup task:
+powershell -ExecutionPolicy Bypass -File .\Find-OnStep.ps1 -Install
 powershell -ExecutionPolicy Bypass -File .\Find-OnStep.ps1 -Uninstall
 ```
 
+Prefer to run `.\Find-OnStep.ps1` directly? Allow local scripts for your user
+once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (and, if you
+downloaded the file, `Unblock-File .\Find-OnStep.ps1` to clear the mark-of-the-web).
+
 Useful options: `-HostAlias <name>` (default `onstep`), `-Port <n>` (default 9999),
-`-ScanTimeoutMs`, `-Retries`. See `Get-Help .\Find-OnStep.ps1 -Full`.
+`-ScanTimeoutMs`, `-Retries`, `-NoElevate` (skip the UAC relaunch). See
+`Get-Help .\Find-OnStep.ps1 -Full`.
 
 ## What it writes
 

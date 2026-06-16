@@ -51,7 +51,8 @@ param(
     [int]$ConfirmTimeoutMs = 1000,
     [int]$Retries = 5,
     [int]$RetryDelaySec = 3,
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$NoElevate   # internal: set on the relaunched elevated instance
 )
 
 $ErrorActionPreference = "Stop"
@@ -253,7 +254,9 @@ function Test-Admin {
 function Install-Task {
     if (-not (Test-Admin)) { throw "Run -Install from an elevated (Administrator) PowerShell." }
     $taskName = "OnStep Discovery"
-    $argline = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Quiet"
+    # -NoElevate: the task already runs elevated (RunLevel Highest), so it must
+    # not attempt an interactive UAC relaunch.
+    $argline = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$PSCommandPath`" -Quiet -NoElevate"
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $argline
     # Run shortly after logon (give Wi-Fi time to associate).
     $trigger = New-ScheduledTaskTrigger -AtLogOn
@@ -278,12 +281,33 @@ function Uninstall-Task {
 # Allow dot-sourcing the functions for tests without executing discovery.
 if ($env:ONSTEP_NO_RUN) { return }
 
+# Self-elevate: relaunch as Administrator (UAC prompt) if we aren't already.
+# Everything here needs admin (hosts file / scheduled task), so this makes the
+# script "always run as administrator" however it's launched. -NoElevate on the
+# relaunched copy prevents an infinite loop.
+if (-not $NoElevate -and -not (Test-Admin)) {
+    $relaunch = @("-NoProfile", "-ExecutionPolicy", "Bypass",
+                  "-File", "`"$PSCommandPath`"", "-NoElevate")
+    if ($Install)                { $relaunch += "-Install" }
+    if ($Uninstall)              { $relaunch += "-Uninstall" }
+    if ($Quiet)                  { $relaunch += "-Quiet" }
+    if ($HostAlias -ne "onstep") { $relaunch += @("-HostAlias", $HostAlias) }
+    if ($Port -ne 9999)          { $relaunch += @("-Port", "$Port") }
+    try {
+        Start-Process -FilePath "powershell.exe" -ArgumentList $relaunch -Verb RunAs | Out-Null
+    } catch {
+        Write-Log "elevation cancelled or failed: $($_.Exception.Message)" "ERROR"
+        exit 3
+    }
+    return
+}
+
 if ($Install)   { Install-Task;   return }
 if ($Uninstall) { Uninstall-Task; return }
 
 if (-not (Test-Admin)) {
-    Write-Log ("NOT elevated -- editing the hosts file requires Administrator. " +
-               "Re-run from an elevated PowerShell, or use -Install to schedule it.") "WARN"
+    Write-Log ("NOT elevated and -NoElevate was set -- editing the hosts file " +
+               "requires Administrator. Re-run elevated.") "WARN"
 }
 
 $found = $null
