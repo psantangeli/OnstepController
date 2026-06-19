@@ -188,25 +188,26 @@ def test_worker_rate_cycle():
         stop.set(); t.join(timeout=2.0); server.close()
 
 
-def test_worker_tracking_cycle():
+def test_worker_tracking_via_menu():
     server = MockOnStep()
     cfg = _config(server.port)  # tracking_modes default: off/sidereal/solar/lunar
     shared, actions, stop, t = _run_worker(cfg, server)
     try:
         assert _wait(lambda: shared.snapshot().connected)
         assert shared.snapshot().tracking_mode == "Off"      # starts off
-        actions.put(inp.Action(inp.TRACK_CYCLE))             # -> sidereal
+        # Open the menu (KEY2); "Tracking" is the first row (menu_index 0).
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open)
+        # Joystick right cycles the tracking rate forward.
+        actions.put(inp.Action(inp.MOVE, "e"))               # -> sidereal
         assert _wait(lambda: shared.snapshot().tracking_mode == "Sidereal")
         assert _wait(lambda: ":TQ#" in server.received and ":Te#" in server.received)
-        actions.put(inp.Action(inp.TRACK_CYCLE))             # -> solar
+        actions.put(inp.Action(inp.MOVE, "e"))               # -> solar
         assert _wait(lambda: shared.snapshot().tracking_mode == "Solar")
         assert _wait(lambda: ":TS#" in server.received)
-        # Cycle through lunar and wrap back to off (disables tracking).
-        actions.put(inp.Action(inp.TRACK_CYCLE))             # -> lunar
-        assert _wait(lambda: shared.snapshot().tracking_mode == "Lunar")
-        actions.put(inp.Action(inp.TRACK_CYCLE))             # -> off
-        assert _wait(lambda: shared.snapshot().tracking_mode == "Off")
-        assert ":Td#" in server.received
+        # Left steps backward (solar -> sidereal).
+        actions.put(inp.Action(inp.MOVE, "w"))
+        assert _wait(lambda: shared.snapshot().tracking_mode == "Sidereal")
     finally:
         stop.set(); t.join(timeout=2.0); server.close()
 
@@ -221,10 +222,14 @@ def test_worker_menu_and_brightness(tmp_path):
         assert shared.snapshot().brightness_index == 1
         assert shared.snapshot().menu_open is False
 
-        # Open the settings menu (KEY1+KEY3 chord); motion is stopped for safety.
+        # Open the settings menu (KEY2); motion is stopped for safety.
         actions.put(inp.Action(inp.MENU))
         assert _wait(lambda: shared.snapshot().menu_open)
         assert _wait(lambda: ":Q#" in server.received)
+
+        # Brightness is the second row -- joystick down selects it.
+        actions.put(inp.Action(inp.MOVE, "s"))
+        assert _wait(lambda: shared.snapshot().menu_index == 1)
 
         # Joystick right cycles brightness up (1 -> 2) and persists it.
         actions.put(inp.Action(inp.MOVE, "e"))
@@ -241,7 +246,7 @@ def test_worker_menu_and_brightness(tmp_path):
         time.sleep(0.2)
         assert ":Mn#" not in server.received
 
-        # Close the menu (chord again).
+        # Close the menu (KEY2 again).
         actions.put(inp.Action(inp.MENU))
         assert _wait(lambda: shared.snapshot().menu_open is False)
     finally:
@@ -257,6 +262,8 @@ def test_brightness_persists_across_workers(tmp_path):
         assert _wait(lambda: shared.snapshot().connected)
         actions.put(inp.Action(inp.MENU))
         assert _wait(lambda: shared.snapshot().menu_open)
+        actions.put(inp.Action(inp.MOVE, "s"))           # select Brightness (row 1)
+        assert _wait(lambda: shared.snapshot().menu_index == 1)
         actions.put(inp.Action(inp.MOVE, "e"))           # 1 -> 2
         assert _wait(lambda: shared.snapshot().brightness_index == 2)
     finally:

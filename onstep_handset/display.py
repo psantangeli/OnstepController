@@ -22,8 +22,8 @@ _DIM = 140      # labels / secondary
 _FAINT = 80     # divider lines / inactive flags
 _BLACK = (0, 0, 0)
 
-#: Settings-menu rows (extensible; only Brightness for now). Shared with main.py.
-MENU_ITEMS = ["Brightness"]
+#: Settings-menu rows (extensible). Shared with main.py.
+MENU_ITEMS = ["Tracking", "Brightness"]
 
 
 def _grey(base: int, factor: float) -> tuple[int, int, int]:
@@ -132,15 +132,20 @@ class Display:
             colour = ink if selected else dim
             marker = ">" if selected else " "
             draw.text((6, y), f"{marker} {item}", font=f_med, fill=colour)
-            if item == "Brightness":
-                draw.text((150, y), self._brightness_bar(s.brightness_index),
-                          font=f_med, fill=colour)
+            draw.text((150, y), self._menu_value(item, s), font=f_med, fill=colour)
             y += 30
 
         # Footer: controls hint.
         draw.line((0, 192, 240, 192), fill=faint)
-        draw.text((6, 200), "Left/Right: change", font=f_small, fill=dim)
-        draw.text((6, 220), "Center or KEY2: back", font=f_small, fill=dim)
+        draw.text((6, 200), "Up/Dn select, L/R change", font=f_small, fill=dim)
+        draw.text((6, 220), "KEY2 or center: exit", font=f_small, fill=dim)
+
+    def _menu_value(self, item: str, s: MountState) -> str:
+        if item == "Tracking":
+            return s.tracking_mode or "--"
+        if item == "Brightness":
+            return self._brightness_bar(s.brightness_index)
+        return ""
 
     def _brightness_bar(self, index: int) -> str:
         n = len(self._brightness_levels)

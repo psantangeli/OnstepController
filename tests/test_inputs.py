@@ -1,7 +1,7 @@
-"""Unit tests for the KEY1+KEY3 chord logic in InputController.
+"""Unit tests for the button -> Action mapping in InputController.
 
-gpiozero isn't available off-Pi, so we inject a fake Button module and drive the
-chord handlers directly.
+gpiozero isn't available off-Pi, so we inject a fake Button module and invoke
+the wired callbacks directly.
 """
 
 import os
@@ -10,6 +10,10 @@ import sys
 import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+_PINS = {name: i for i, name in enumerate(
+    ["joy_up", "joy_down", "joy_left", "joy_right",
+     "joy_press", "key1", "key2", "key3"])}
 
 
 def _make_controller():
@@ -29,11 +33,10 @@ def _make_controller():
 
     from onstep_handset.inputs import InputController
 
-    pins = {name: i for i, name in enumerate(
-        ["joy_up", "joy_down", "joy_left", "joy_right",
-         "joy_press", "key1", "key2", "key3"])}
     q: "queue.Queue" = queue.Queue()
-    return InputController(pins, q), q
+    ic = InputController(_PINS, q)
+    by_pin = {b.pin: b for b in ic._buttons}
+    return ic, q, by_pin
 
 
 def _drain(q):
@@ -43,53 +46,32 @@ def _drain(q):
     return out
 
 
-def test_chord_emits_menu_and_suppresses_rate():
+def test_key2_opens_menu():
     from onstep_handset.inputs import MENU
-    ic, q = _make_controller()
-
-    ic._chord_press("key1")()      # first key down -> nothing yet
-    assert q.empty()
-    ic._chord_press("key3")()      # both down -> MENU
-    kinds = [a.kind for a in _drain(q)]
-    assert kinds == [MENU]
-
-    # Releasing either key after a chord must NOT emit a rate change.
-    ic._chord_release("key1", "rate_down")()
-    ic._chord_release("key3", "rate_up")()
-    assert _drain(q) == []
+    _, q, btn = _make_controller()
+    btn[_PINS["key2"]].when_pressed()
+    assert [a.kind for a in _drain(q)] == [MENU]
 
 
-def test_single_key_emits_rate_on_release():
+def test_key1_key3_change_rate():
     from onstep_handset.inputs import RATE_DOWN, RATE_UP
-    ic, q = _make_controller()
-
-    # KEY1 alone: nothing on press, RATE_DOWN on release.
-    ic._chord_press("key1")()
-    assert q.empty()
-    ic._chord_release("key1", RATE_DOWN)()
-    kinds = [a.kind for a in _drain(q)]
-    assert kinds == [RATE_DOWN]
-
-    # KEY3 alone -> RATE_UP on release.
-    ic._chord_press("key3")()
-    ic._chord_release("key3", RATE_UP)()
-    kinds = [a.kind for a in _drain(q)]
-    assert kinds == [RATE_UP]
+    _, q, btn = _make_controller()
+    btn[_PINS["key1"]].when_pressed()
+    assert [a.kind for a in _drain(q)] == [RATE_DOWN]
+    btn[_PINS["key3"]].when_pressed()
+    assert [a.kind for a in _drain(q)] == [RATE_UP]
 
 
-def test_chord_state_resets_after_full_release():
-    from onstep_handset.inputs import MENU, RATE_DOWN
-    ic, q = _make_controller()
+def test_joystick_move_stop_and_centre():
+    from onstep_handset.inputs import MOVE, STOP, STOP_ALL
+    _, q, btn = _make_controller()
 
-    # Chord, then fully release both.
-    ic._chord_press("key1")()
-    ic._chord_press("key3")()
-    ic._chord_release("key1", "rate_down")()
-    ic._chord_release("key3", "rate_up")()
-    _drain(q)
+    btn[_PINS["joy_up"]].when_pressed()
+    a = _drain(q)
+    assert a[0].kind == MOVE and a[0].arg == "n"
+    btn[_PINS["joy_up"]].when_released()
+    a = _drain(q)
+    assert a[0].kind == STOP and a[0].arg == "n"
 
-    # A subsequent lone KEY1 press/release should behave normally again.
-    ic._chord_press("key1")()
-    ic._chord_release("key1", RATE_DOWN)()
-    kinds = [a.kind for a in _drain(q)]
-    assert kinds == [RATE_DOWN]
+    btn[_PINS["joy_press"]].when_pressed()
+    assert [a.kind for a in _drain(q)] == [STOP_ALL]

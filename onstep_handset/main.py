@@ -23,7 +23,7 @@ from .comms import OnStepClient
 from .config import HOST_CACHE, SETTINGS_PATH, Config, load
 from .discovery import HostResolver
 from .inputs import (Action, InputController, MENU, MOVE, RATE_DOWN, RATE_UP,
-                     STOP, STOP_ALL, TRACK_CYCLE)
+                     STOP, STOP_ALL)
 from .display import MENU_ITEMS
 from .settings import load_settings, save_settings
 from .state import MountState, SharedState
@@ -130,7 +130,7 @@ class CommsWorker:
 
     def _handle(self, action: Action) -> None:
         kind = action.kind
-        # The KEY1+KEY3 chord toggles the menu in any mode.
+        # KEY2 (MENU) toggles the settings menu in any mode.
         if kind == MENU:
             self._toggle_menu()
             return
@@ -148,8 +148,6 @@ class CommsWorker:
             self._change_rate(-1)
         elif kind == RATE_UP:
             self._change_rate(+1)
-        elif kind == TRACK_CYCLE:
-            self._cycle_tracking()
 
     # --- settings menu --------------------------------------------------
 
@@ -163,7 +161,8 @@ class CommsWorker:
 
     def _handle_menu(self, action: Action) -> None:
         """Navigate the settings menu. Joystick up/down selects a row, left/right
-        (or KEY1/KEY3) changes its value, centre press or KEY2 closes the menu."""
+        (or KEY1/KEY3) changes its value, centre press closes the menu (KEY2 also
+        closes, handled as MENU before we get here)."""
         kind = action.kind
         if kind == MOVE and action.arg == "n":          # up
             self.menu_index = (self.menu_index - 1) % len(MENU_ITEMS)
@@ -175,13 +174,15 @@ class CommsWorker:
             self._adjust_setting(-1)
         elif (kind == MOVE and action.arg == "e") or kind == RATE_UP:
             self._adjust_setting(+1)
-        elif kind in (STOP_ALL, TRACK_CYCLE):           # centre or KEY2: close
+        elif kind == STOP_ALL:                          # centre press: close
             self._toggle_menu()
         # STOP (joystick release) is ignored in the menu.
 
     def _adjust_setting(self, delta: int) -> None:
         item = MENU_ITEMS[self.menu_index]
-        if item == "Brightness":
+        if item == "Tracking":
+            self._cycle_tracking(delta)
+        elif item == "Brightness":
             self._cycle_brightness(delta)
 
     def _cycle_brightness(self, delta: int) -> None:
@@ -203,9 +204,9 @@ class CommsWorker:
         self.shared.update(rate_index=self.rate_index, rate_label=self._rate_label())
         self._safe(lambda: self.client.send(protocol.rate(self._rate_code())))
 
-    def _cycle_tracking(self) -> None:
-        """Advance to the next tracking mode and apply it on the mount."""
-        self.tracking_index = (self.tracking_index + 1) % len(self.cfg.tracking_modes)
+    def _cycle_tracking(self, delta: int = 1) -> None:
+        """Step the tracking mode by ``delta`` (wraps) and apply it on the mount."""
+        self.tracking_index = (self.tracking_index + delta) % len(self.cfg.tracking_modes)
         mode = self.cfg.tracking_modes[self.tracking_index]
         # A mode change may be several commands (set rate, then enable tracking).
         for cmd in protocol.tracking_commands(mode):

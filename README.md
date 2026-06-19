@@ -14,12 +14,11 @@ ST-4 port** — so motion is commanded over the network rather than a guide cabl
   stop). N/S = Dec, E/W = RA.
 - **Selectable rate** — KEY1 / KEY3 cycle slew rate (Guide → Center → Find → Slew).
 - **Emergency stop** — joystick centre press halts all motion (`:Q#`).
-- **Tracking modes** — KEY2 cycles tracking rate: Off → Sidereal → Solar →
-  Lunar (configurable; "king" available). Useful for solar observing.
-- **Settings menu** — press **KEY1 + KEY3 together** to open it. Joystick
-  left/right changes the selected setting, centre press or KEY2 closes it. The
-  only setting for now is **Brightness** (3 levels), which is **remembered**
-  across restarts.
+- **Settings menu** — press **KEY2** to open/close it. Joystick up/down selects a
+  row, left/right changes its value, centre press or KEY2 closes it. Settings:
+  - **Tracking** — rate: Off → Sidereal → Solar → Lunar (configurable; "king"
+    available). Useful for solar observing.
+  - **Brightness** — 3 levels, **remembered** across restarts.
 - **Night-vision friendly** — the screen is rendered **monochrome** (grey on
   black) so it stays readable behind a red filter. Since the HAT backlight is
   on/off only, "brightness" changes the grey intensity used to draw.
@@ -32,10 +31,10 @@ GoTo, object catalogs, park/home, and focuser control are deferred.
 
 | Control | Normal mode | Settings menu |
 |---|---|---|
-| Joystick N/S/E/W | Slew (hold) | Up/Down select, Left/Right change value |
+| Joystick N/S/E/W | Slew (hold) | Up/Down select row, Left/Right change value |
 | Joystick centre | Emergency STOP | Close menu |
-| KEY1 / KEY3 | Slew rate down / up | (held together anywhere) open/close menu |
-| KEY2 | Cycle tracking mode | Close menu |
+| KEY1 / KEY3 | Slew rate down / up | Change selected value |
+| KEY2 | Open settings menu | Close settings menu |
 
 ## Networking & auto-discovery
 
