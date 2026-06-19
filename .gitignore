@@ -16,5 +16,8 @@ config.local.yaml
 # 3D-printable case designs (third-party downloads; kept local only)
 [Cc]ase*/
 
+# Data dir the Windows tool falls back to when run off-Windows (no %ProgramData%)
+/OnStep/
+
 # Editor / OS
 .DS_Store

@@ -1,66 +1,62 @@
 # OnStep discovery for Windows (ASCOM / NINA)
 
-`Find-OnStep.ps1` discovers your OnStep mount on whatever network the telescope
+`find_onstep.py` discovers your OnStep mount on whatever network the telescope
 PC is on and pins a **stable hostname** (`onstep`) to its current IP via the
-Windows hosts file. You configure ASCOM **once** to use `onstep`, and it keeps
+Windows hosts file. Configure ASCOM **once** to use `onstep`, and it keeps
 working at home, in the field, anywhere — no matter how the DHCP subnet changes.
 
-It uses the same discovery cascade as the Pi hand controller:
+It **reuses the exact discovery code from the hand controller**
+(`onstep_handset/discovery.py`) — the same cascade proven on the Pi:
 
 1. **Cached IP** — last known-good address (validated instantly).
 2. **mDNS** — `onstep.local` / `onstepsws.local`.
 3. **Subnet sweep** — scans the local network for TCP 9999, confirming each
    candidate with the LX200 `:GVP#` query (must answer `On-Step#`).
 
+> This replaces the earlier PowerShell version. If the hostname never resolved
+> before, it was almost certainly the PowerShell sweep failing to detect open
+> ports; this Python version uses the handset's battle-tested sweep instead.
+
+## Requirements
+
+- **Python 3** on the telescope PC (3.8+). The discovery code is **standard
+  library only** — no `pip install` needed.
+- The repo checked out so `find_onstep.py` sits next to the `onstep_handset/`
+  package (i.e. clone this repo on the Windows PC). The script adds the repo root
+  to `sys.path` and imports `onstep_handset.discovery`.
+
 ## One-time setup
 
-1. **Copy the script** to the telescope PC, e.g. `C:\Tools\OnStep\Find-OnStep.ps1`.
-
-2. **Register it to run at logon** (it self-elevates with a UAC prompt — no need
-   to open an Administrator PowerShell first):
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File C:\Tools\OnStep\Find-OnStep.ps1 -Install
-   ```
-
-   This creates a Scheduled Task ("OnStep Discovery") that runs at logon, elevated
-   (RunLevel Highest), 15 s after login so Wi-Fi has time to associate.
-
-3. **Point your driver at the hostname.** In the ASCOM OnStep/LX200 driver setup
-   (as used by NINA, SGP, PHD2, etc.):
-
-   ```
-   Host / Address:  onstep
-   Port:            9999
-   ```
-
-That's it. On each logon the task finds the mount and updates the `onstep` entry;
-your driver connects by name.
-
-## Running it manually
-
-Always launch it **through `powershell.exe` with `-ExecutionPolicy Bypass`** —
-Windows blocks `.ps1` files by default, so running `.\Find-OnStep.ps1` directly
-fails with *"running scripts is disabled on this system."* The script then
-**self-elevates** (UAC prompt) so it can write the hosts file — you do *not* need
-to start an Administrator PowerShell yourself.
-
-```powershell
-# Run discovery now (pops a UAC prompt to elevate, then updates hosts):
-powershell -ExecutionPolicy Bypass -File .\Find-OnStep.ps1
-
-# Register / remove the logon startup task:
-powershell -ExecutionPolicy Bypass -File .\Find-OnStep.ps1 -Install
-powershell -ExecutionPolicy Bypass -File .\Find-OnStep.ps1 -Uninstall
+```bat
+:: From the repo root, in a normal Command Prompt / PowerShell:
+python windows\find_onstep.py            :: discover now (self-elevates for hosts)
+python windows\find_onstep.py --install  :: also run at every logon
 ```
 
-Prefer to run `.\Find-OnStep.ps1` directly? Allow local scripts for your user
-once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (and, if you
-downloaded the file, `Unblock-File .\Find-OnStep.ps1` to clear the mark-of-the-web).
+`--install` registers a Task Scheduler job ("OnStep Discovery") that runs at
+logon, elevated, 15 s after login (so Wi-Fi has time to associate). Writing the
+hosts file needs Administrator, so the script **self-elevates** (UAC prompt) —
+you don't need to open an admin shell yourself.
 
-Useful options: `-HostAlias <name>` (default `onstep`), `-Port <n>` (default 9999),
-`-ScanTimeoutMs`, `-Retries`, `-NoElevate` (skip the UAC relaunch). See
-`Get-Help .\Find-OnStep.ps1 -Full`.
+Then point your ASCOM OnStep/LX200 driver at:
+
+```
+Host / Address:  onstep
+Port:            9999
+```
+
+## Usage / options
+
+```bat
+python windows\find_onstep.py              :: discover + update hosts
+python windows\find_onstep.py --once       :: single attempt (no retry loop)
+python windows\find_onstep.py --uninstall  :: remove the logon task
+python windows\find_onstep.py --prefix 23  :: sweep a /23 (default is /24)
+```
+
+Other flags: `--hostname <name>` (default `onstep`), `--port <n>` (9999),
+`--hostnames onstep.local ...` (mDNS names), `--scan-timeout`, `--retries`,
+`--quiet`. Run `python windows\find_onstep.py -h` for all.
 
 ## What it writes
 
@@ -71,33 +67,28 @@ Useful options: `-HostAlias <name>` (default `onstep`), `-Port <n>` (default 999
   192.168.4.20	onstep	# OnStep auto-discovery
   ```
 
-- **Cache + log** (`%ProgramData%\OnStep\`) — `discovered_host` (last good IP) and
-  `discovery.log` (timestamped results, handy for checking what the startup task
-  did).
+- **Cache + log** (`%ProgramData%\OnStep\`) — `discovered_host` (last good IP, so
+  next run is instant) and `discovery.log` (timestamped results).
 
-## Troubleshooting
+## Notes / troubleshooting
 
-- **"NOT elevated" / hosts not updated** — the hosts file needs Administrator.
-  Run the script (or the scheduled task) elevated. The `-Install` task already
-  runs with highest privileges.
-- **Execution policy blocks the script** — use `-ExecutionPolicy Bypass` as shown,
-  or `Unblock-File .\Find-OnStep.ps1` once after copying it over.
-- **Driver only accepts a numeric IP** — some ASCOM dialogs validate the host
-  field as four octets and reject a hostname. If yours does, check
-  `%ProgramData%\OnStep\discovered_host` for the current IP, or tell me and I'll
-  switch the script to write the IP straight into the driver's ASCOM profile.
-- **Nothing found at startup** — the script retries a few times (network may still
-  be coming up). Check `discovery.log`. Make sure the PC and mount are on the same
-  LAN and the mount is powered.
-- **`onstep.local` already works for you?** Windows 10+ can resolve `.local` via
-  mDNS, so you may be able to use `onstep.local` directly in some drivers — but the
-  hosts-file approach is more reliable and works with drivers that don't do mDNS.
+- **Subnet size** — when the netmask can't be auto-detected on Windows the sweep
+  uses a **/24** (covers almost all home/field networks). For a larger network
+  pass `--prefix 23`/`22`/etc.
+- **Driver only accepts a numeric IP?** Some ASCOM dialogs reject hostnames. If
+  yours does, read the current IP from `%ProgramData%\OnStep\discovered_host`, or
+  ask for the variant that writes the IP straight into the driver's ASCOM profile.
+- **Nothing found at startup** — the script retries a few times while the network
+  comes up; check `discovery.log`. Make sure the PC and mount are on the same LAN.
+- **`onstep.local` already resolves for you?** Windows 10+ can do mDNS, so some
+  drivers can use `onstep.local` directly — but the hosts-file approach is more
+  reliable and works with drivers that don't do mDNS.
 
 ## Tests
 
-`tests/Test-FindOnStep.ps1` covers the portable logic (IPv4 enumeration, hosts
-rewrite, `:GVP#` identify, port sweep) and runs on any PowerShell 7:
+`tests/test_find_onstep.py` covers the hosts rewrite and the discovery reuse
+(against a mock OnStep). Runs on any OS:
 
-```powershell
-pwsh -File tests/Test-FindOnStep.ps1
+```
+python -m pytest windows/tests/
 ```
