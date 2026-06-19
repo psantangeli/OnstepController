@@ -78,7 +78,11 @@ class MockOnStep:
             return "On-Step#"
         if cmd == protocol.GET_VERSION:
             return "10.28n#"
-        return ""                  # motion/rate/track commands: no reply
+        # Tracking enable/disable/rate commands DO reply "1#" on real OnStep --
+        # exercise the client's stale-reply draining.
+        if cmd in (":Te#", ":Td#", ":TQ#", ":TS#", ":TL#", ":TK#"):
+            return "1#"
+        return ""                  # motion / rate / home commands: no reply
 
     def close(self):
         self._stop.set()
@@ -249,6 +253,58 @@ def test_worker_menu_and_brightness(tmp_path):
         # Close the menu (KEY2 again).
         actions.put(inp.Action(inp.MENU))
         assert _wait(lambda: shared.snapshot().menu_open is False)
+    finally:
+        stop.set(); t.join(timeout=2.0); server.close()
+
+
+def test_worker_park_requires_confirm(tmp_path):
+    server = MockOnStep()
+    cfg = _config(server.port)
+    settings = str(tmp_path / "ui.json")
+    shared, actions, stop, t = _run_worker(cfg, server, settings_path=settings)
+    try:
+        assert _wait(lambda: shared.snapshot().connected)
+        actions.put(inp.Action(inp.MENU))                       # open menu
+        assert _wait(lambda: shared.snapshot().menu_open)
+        actions.put(inp.Action(inp.MOVE, "s"))                  # -> Brightness
+        actions.put(inp.Action(inp.MOVE, "s"))                  # -> Park (row 2)
+        assert _wait(lambda: shared.snapshot().menu_index == 2)
+
+        # First right arms the confirm; nothing sent yet.
+        actions.put(inp.Action(inp.MOVE, "e"))
+        assert _wait(lambda: shared.snapshot().menu_confirm)
+        time.sleep(0.15)
+        assert ":hC#" not in server.received
+
+        # Second right runs Park: :hC# + :Td#, tracking off, menu closes.
+        actions.put(inp.Action(inp.MOVE, "e"))
+        assert _wait(lambda: ":hC#" in server.received)
+        assert _wait(lambda: ":Td#" in server.received)
+        assert _wait(lambda: shared.snapshot().menu_open is False)
+        assert shared.snapshot().tracking_mode == "Off"
+    finally:
+        stop.set(); t.join(timeout=2.0); server.close()
+
+
+def test_worker_park_confirm_can_be_cancelled(tmp_path):
+    server = MockOnStep()
+    cfg = _config(server.port)
+    settings = str(tmp_path / "ui.json")
+    shared, actions, stop, t = _run_worker(cfg, server, settings_path=settings)
+    try:
+        assert _wait(lambda: shared.snapshot().connected)
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open)
+        actions.put(inp.Action(inp.MOVE, "s"))
+        actions.put(inp.Action(inp.MOVE, "s"))                  # -> Park
+        assert _wait(lambda: shared.snapshot().menu_index == 2)
+        actions.put(inp.Action(inp.MOVE, "e"))                  # arm
+        assert _wait(lambda: shared.snapshot().menu_confirm)
+        actions.put(inp.Action(inp.MOVE, "w"))                  # left cancels
+        assert _wait(lambda: shared.snapshot().menu_confirm is False)
+        time.sleep(0.15)
+        assert ":hC#" not in server.received                    # never ran
+        assert shared.snapshot().menu_open is True              # still in menu
     finally:
         stop.set(); t.join(timeout=2.0); server.close()
 

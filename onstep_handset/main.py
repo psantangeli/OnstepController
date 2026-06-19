@@ -24,7 +24,7 @@ from .config import HOST_CACHE, SETTINGS_PATH, Config, load
 from .discovery import HostResolver
 from .inputs import (Action, InputController, MENU, MOVE, RATE_DOWN, RATE_UP,
                      STOP, STOP_ALL)
-from .display import MENU_ITEMS
+from .display import ACTION_ITEMS, MENU_ITEMS
 from .settings import load_settings, save_settings
 from .state import MountState, SharedState
 
@@ -59,6 +59,7 @@ class CommsWorker:
             persisted.get("brightness_index", cfg.default_brightness_index))
         self.menu_open = False
         self.menu_index = 0
+        self.menu_confirm = False
 
     def run(self) -> None:
         self.shared.update(rate_index=self.rate_index,
@@ -153,37 +154,77 @@ class CommsWorker:
 
     def _toggle_menu(self) -> None:
         self.menu_open = not self.menu_open
+        self.menu_confirm = False
         if self.menu_open:
             # Stop any motion before the user fiddles with settings.
             self._safe(lambda: self.client.send(protocol.STOP_ALL))
             self.menu_index = 0
-        self.shared.update(menu_open=self.menu_open, menu_index=self.menu_index)
+        self.shared.update(menu_open=self.menu_open, menu_index=self.menu_index,
+                           menu_confirm=False)
 
     def _handle_menu(self, action: Action) -> None:
         """Navigate the settings menu. Joystick up/down selects a row, left/right
-        (or KEY1/KEY3) changes its value, centre press closes the menu (KEY2 also
-        closes, handled as MENU before we get here)."""
+        (or KEY1/KEY3) changes a value -- or, for an action row (Park), right arms
+        then runs it, left cancels. Centre press cancels a pending confirm, else
+        closes the menu (KEY2 closes too, handled as MENU before we get here)."""
         kind = action.kind
+        item = MENU_ITEMS[self.menu_index]
         if kind == MOVE and action.arg == "n":          # up
-            self.menu_index = (self.menu_index - 1) % len(MENU_ITEMS)
-            self.shared.update(menu_index=self.menu_index)
+            self._menu_select(-1)
         elif kind == MOVE and action.arg == "s":        # down
-            self.menu_index = (self.menu_index + 1) % len(MENU_ITEMS)
-            self.shared.update(menu_index=self.menu_index)
+            self._menu_select(+1)
         elif (kind == MOVE and action.arg == "w") or kind == RATE_DOWN:
-            self._adjust_setting(-1)
+            self._menu_change(item, -1)
         elif (kind == MOVE and action.arg == "e") or kind == RATE_UP:
-            self._adjust_setting(+1)
-        elif kind == STOP_ALL:                          # centre press: close
-            self._toggle_menu()
+            self._menu_change(item, +1)
+        elif kind == STOP_ALL:                          # centre press
+            if self.menu_confirm:
+                self._set_confirm(False)                # cancel arm, stay in menu
+            else:
+                self._toggle_menu()
         # STOP (joystick release) is ignored in the menu.
 
-    def _adjust_setting(self, delta: int) -> None:
-        item = MENU_ITEMS[self.menu_index]
-        if item == "Tracking":
+    def _menu_select(self, delta: int) -> None:
+        self.menu_index = (self.menu_index + delta) % len(MENU_ITEMS)
+        self.menu_confirm = False
+        self.shared.update(menu_index=self.menu_index, menu_confirm=False)
+
+    def _menu_change(self, item: str, delta: int) -> None:
+        if item in ACTION_ITEMS:
+            if delta > 0:                               # right: arm, then run
+                if self.menu_confirm:
+                    self._run_action(item)
+                else:
+                    self._set_confirm(True)
+            else:                                       # left: cancel arm
+                self._set_confirm(False)
+        elif item == "Tracking":
             self._cycle_tracking(delta)
         elif item == "Brightness":
             self._cycle_brightness(delta)
+
+    def _set_confirm(self, value: bool) -> None:
+        self.menu_confirm = value
+        self.shared.update(menu_confirm=value)
+
+    def _run_action(self, item: str) -> None:
+        if item == "Park":
+            self._park_home()
+        # Close the menu so the user watches the slew on the status screen.
+        self.menu_open = False
+        self.menu_confirm = False
+        self.shared.update(menu_open=False, menu_confirm=False)
+
+    def _park_home(self) -> None:
+        """Return the mount to its power-on (home) position and stop tracking.
+
+        :hC# slews to home; OnStepX turns tracking off on arrival, and we send
+        :Td# as well to be certain. Reflect tracking-off in the UI immediately."""
+        self._safe(lambda: self.client.send(protocol.GOTO_HOME))    # :hC# no reply
+        self._safe(lambda: self.client.query(protocol.track(False)))  # :Td# -> 1#
+        if "off" in self.cfg.tracking_modes:
+            self.tracking_index = self.cfg.tracking_modes.index("off")
+            self.shared.update(tracking_mode=self._tracking_label())
 
     def _cycle_brightness(self, delta: int) -> None:
         n = len(self.cfg.brightness_levels)
@@ -208,9 +249,10 @@ class CommsWorker:
         """Step the tracking mode by ``delta`` (wraps) and apply it on the mount."""
         self.tracking_index = (self.tracking_index + delta) % len(self.cfg.tracking_modes)
         mode = self.cfg.tracking_modes[self.tracking_index]
-        # A mode change may be several commands (set rate, then enable tracking).
+        # Tracking commands reply "1#"; use query() to consume the ack so it can't
+        # corrupt the next status read. (A mode change may be several commands.)
         for cmd in protocol.tracking_commands(mode):
-            self._safe(lambda c=cmd: self.client.send(c))
+            self._safe(lambda c=cmd: self.client.query(c))
         self.shared.update(tracking_mode=self._tracking_label())
 
     def _rate_code(self) -> str:

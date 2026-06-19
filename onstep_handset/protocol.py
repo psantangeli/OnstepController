@@ -119,6 +119,11 @@ GET_DEC = ":GD#"      # Dec -> "sDD*MM:SS#"
 GET_PRODUCT = ":GVP#"  # product name -> "On-Step#" (both OnStep and OnStepX)
 GET_VERSION = ":GVN#"  # firmware version -> e.g. "10.28n#" (OnStepX: "10." prefix)
 
+# Home / "park to startup position". :hC# slews to the home position (the mount's
+# power-on / counterweights-down reference) and OnStepX turns tracking off on
+# arrival. No reply. We pair it with :Td# as belt-and-suspenders.
+GOTO_HOME = ":hC#"
+
 
 def is_onstep_product(reply: str) -> bool:
     """True if a ``:GVP#`` reply identifies an OnStep/OnStepX device.

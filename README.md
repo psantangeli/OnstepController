@@ -19,13 +19,33 @@ ST-4 port** — so motion is commanded over the network rather than a guide cabl
   - **Tracking** — rate: Off → Sidereal → Solar → Lunar (configurable; "king"
     available). Useful for solar observing.
   - **Brightness** — 3 levels, **remembered** across restarts.
+  - **Park** — returns the mount to its power-on (home) position and stops
+    tracking (sends `:hC#`). Requires a confirm (right to arm, right again to
+    run). Assumes you always power on at the home position; see below.
 - **Night-vision friendly** — the screen is rendered **monochrome** (grey on
   black) so it stays readable behind a red filter. Since the HAT backlight is
   on/off only, "brightness" changes the grey intensity used to draw.
-- **Live status screen** — RA/Dec, current rate, tracking / slewing / parked
-  flags, and a connection/error banner.
+- **Live status screen** — RA/Dec, current rate, tracking / slewing / parked /
+  **home** flags, and a connection/error banner.
 
-GoTo, object catalogs, park/home, and focuser control are deferred.
+GoTo, object catalogs, OnStep's saved-park, and focuser control are deferred.
+
+### Park / end of session
+
+The **Park** menu item is a simple "put it away" command: it sends OnStepX's
+go-to-home (`:hC#`), which returns the mount to its **power-on position** and
+turns tracking off automatically. The workflow it assumes:
+
+1. **Always power on with the mount at the home position** (GEM counterweights
+   down, pointing at the celestial pole). OnStepX (no homing sensors on the
+   FYSETC E4) treats the power-on position as home.
+2. Observe as normal — only ever move via the controller (don't release the
+   clutches, or OnStepX loses track of where home is).
+3. End of night: open the menu → **Park** → confirm. The mount slews home and
+   stops tracking; the status screen shows **HOME**.
+
+This deliberately does *not* use OnStep's saved-park (`:hP#`/`:hQ#`) feature —
+it's just go-to-home, which is exactly "return to where it started".
 
 ### Controls
 

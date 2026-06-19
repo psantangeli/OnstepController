@@ -71,7 +71,11 @@ release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and 
 - `onstep_handset/comms.py` — `OnStepClient`: persistent TCP socket, `#`-framed
   reads, TCP keepalive, exponential-backoff reconnect. Raises `ConnectionError`
   on any disconnect; the worker loop catches it and reconnects. `host` is mutable
-  and may be `None` (set by the worker after resolution).
+  and may be `None` (set by the worker after resolution). `query()` drains stale
+  buffered bytes first; commands that reply (`:Te#`/`:Td#`/`:TQ#`…) MUST be sent
+  via `query()` (not `send()`) so their `1#` ack is consumed and can't corrupt
+  the next status read. `send()` is only for true no-reply commands (`:M*#`,
+  `:Q#`, `:hC#`).
 - `onstep_handset/discovery.py` — finds the mount when `mount.host == "auto"`.
   Cascade: cached IP → mDNS hostname (`onstep.local`) → subnet sweep, confirming
   every candidate with `:GVP#` (`On-Step#`). `HostResolver` wraps config (a fixed
@@ -91,8 +95,10 @@ release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and 
 - `onstep_handset/main.py` — config load, thread wiring, signal handling, the
   `CommsWorker` and UI loop. The worker owns menu state: `MENU` (KEY2) toggles
   the menu (and sends `:Q#`); while `menu_open`, controls navigate the menu
-  (rows: Tracking, Brightness) instead of the mount; brightness is persisted via
-  `settings.py`, tracking-rate changes are sent to the mount.
+  instead of the mount. Rows (`MENU_ITEMS` in display.py): Tracking, Brightness
+  (value rows, left/right cycles), and Park (an `ACTION_ITEMS` row — right arms a
+  confirm, right again runs it). Park = go-to-home (`:hC#`, which returns to the
+  power-on position and stops tracking). Brightness persists via `settings.py`.
 - `onstep_handset/config.py` / `config.yaml` — config + optional
   `config.local.yaml` override (gitignored). `brightness_levels` are grey-intensity
   multipliers (the HAT backlight is on/off only, so brightness == grey level).

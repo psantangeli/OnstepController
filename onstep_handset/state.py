@@ -31,6 +31,7 @@ class MountState:
     brightness_index: int = 0    # index into config.brightness_levels
     menu_open: bool = False      # settings menu showing instead of status
     menu_index: int = 0          # selected row in the settings menu
+    menu_confirm: bool = False   # an action row (e.g. Park) is armed for confirm
 
     @property
     def has_error(self) -> bool:

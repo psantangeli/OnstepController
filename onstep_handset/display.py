@@ -23,7 +23,9 @@ _FAINT = 80     # divider lines / inactive flags
 _BLACK = (0, 0, 0)
 
 #: Settings-menu rows (extensible). Shared with main.py.
-MENU_ITEMS = ["Tracking", "Brightness"]
+MENU_ITEMS = ["Tracking", "Brightness", "Park"]
+#: Rows that perform an action (with confirm) rather than cycling a value.
+ACTION_ITEMS = {"Park"}
 
 
 def _grey(base: int, factor: float) -> tuple[int, int, int]:
@@ -118,7 +120,8 @@ class Display:
         # Status flags row: bright when active, faint when not.
         y = 212
         draw.text((6, y), "SLEW", font=f_small, fill=ink if s.slewing else faint)
-        draw.text((96, y), "PARK", font=f_small, fill=ink if s.parked else faint)
+        draw.text((92, y), "HOME", font=f_small, fill=ink if s.at_home else faint)
+        draw.text((178, y), "PARK", font=f_small, fill=ink if s.parked else faint)
 
     def _paint_menu(self, draw, s: MountState, ink, dim, faint) -> None:
         f_small, f_med, f_big, f_label = self._fonts
@@ -132,19 +135,23 @@ class Display:
             colour = ink if selected else dim
             marker = ">" if selected else " "
             draw.text((6, y), f"{marker} {item}", font=f_med, fill=colour)
-            draw.text((150, y), self._menu_value(item, s), font=f_med, fill=colour)
-            y += 30
+            draw.text((150, y), self._menu_value(item, s, selected),
+                      font=f_med, fill=colour)
+            y += 28
 
         # Footer: controls hint.
         draw.line((0, 192, 240, 192), fill=faint)
         draw.text((6, 200), "Up/Dn select, L/R change", font=f_small, fill=dim)
         draw.text((6, 220), "KEY2 or center: exit", font=f_small, fill=dim)
 
-    def _menu_value(self, item: str, s: MountState) -> str:
+    def _menu_value(self, item: str, s: MountState, selected: bool) -> str:
         if item == "Tracking":
             return s.tracking_mode or "--"
         if item == "Brightness":
             return self._brightness_bar(s.brightness_index)
+        if item == "Park":
+            # Action row: ">" runs it; arms a confirm step first.
+            return "Sure? >" if (selected and s.menu_confirm) else "Run >"
         return ""
 
     def _brightness_bar(self, index: int) -> str:
@@ -215,5 +222,5 @@ def _load_fonts():
 def _render_key(s: MountState) -> tuple:
     """Everything that affects the rendered pixels -- used to skip no-op repaints."""
     return (s.connected, s.searching, s.host, s.ra, s.dec, s.tracking_mode,
-            s.slewing, s.parked, s.error_code, s.rate_label,
-            s.brightness_index, s.menu_open, s.menu_index)
+            s.slewing, s.parked, s.at_home, s.error_code, s.rate_label,
+            s.brightness_index, s.menu_open, s.menu_index, s.menu_confirm)

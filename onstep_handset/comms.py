@@ -95,11 +95,34 @@ class OnStepClient:
         self._write(command)
 
     def query(self, command: str) -> str:
-        """Send a command and read the ``#``-terminated reply. Raises on disconnect."""
+        """Send a command and read the ``#``-terminated reply. Raises on disconnect.
+
+        Discards any stale buffered bytes first -- some 'fire and forget' commands
+        (e.g. ``:Td#`` -> ``1#``) do return a reply that ``send()`` doesn't read,
+        and we must not let that leftover corrupt this query's response.
+        """
+        self._drain_input()
         self._write(command)
         return self._read_until_hash()
 
     # --- internals ------------------------------------------------------
+
+    def _drain_input(self) -> None:
+        """Non-blocking discard of any bytes already waiting on the socket."""
+        if self._sock is None:
+            return
+        try:
+            self._sock.setblocking(False)
+            while True:
+                if self._sock.recv(256) == b"":
+                    break  # peer closed; let the next real read surface it
+        except (BlockingIOError, InterruptedError):
+            pass  # nothing (more) buffered -- normal
+        except OSError:
+            pass
+        finally:
+            if self._sock is not None:
+                self._sock.settimeout(self.timeout)
 
     def _write(self, command: str) -> None:
         if self._sock is None:
