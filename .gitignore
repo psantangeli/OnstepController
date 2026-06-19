@@ -9,11 +9,12 @@ venv/
 # Local config overrides
 config.local.yaml
 
-# Runtime: last discovered mount IP
+# Runtime: last discovered mount IP + persisted UI settings
 .discovered_host
+.ui_settings.json
 
-# 3D-printable case design (third-party download; kept local only)
-case/
+# 3D-printable case designs (third-party downloads; kept local only)
+[Cc]ase*/
 
 # Editor / OS
 .DS_Store

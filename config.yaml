@@ -28,6 +28,11 @@ ui:
   fps: 5.0                  # max UI redraw rate; redraws happen on change anyway
   spi_hz: 32000000          # ST7789 SPI clock (32 MHz; can push toward 48-62 MHz)
   rotation: 0               # 0/1/2/3 -- set to match how the HAT is mounted
+  # Display is rendered monochrome (grey on black) so it stays readable behind a
+  # red night-vision filter. "Brightness" cycles the grey intensity (the HAT
+  # backlight is on/off only). Open the settings menu with KEY1 + KEY3 together.
+  brightness_levels: [0.35, 0.65, 1.0]   # 3 grey-intensity multipliers (dim->bright)
+  default_brightness_index: 1            # used until you change it (then remembered)
 
 # Slew-rate cycle order (KEY1 = slower, KEY3 = faster). LX200 rate codes:
 #   RG guide(1x)  RC center(8x)  RM find(20x)  RS slew(max)

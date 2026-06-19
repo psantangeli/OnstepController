@@ -109,7 +109,7 @@ def test_client_query_roundtrip():
         server.close()
 
 
-def _run_worker(cfg, server):
+def _run_worker(cfg, server, settings_path=None):
     shared = SharedState(MountState())
     actions: "queue.Queue" = queue.Queue()
     stop = threading.Event()
@@ -118,7 +118,11 @@ def _run_worker(cfg, server):
                             subnet_prefix=24, scan_timeout=0.2, cache_path=None)
     client = OnStepClient(None, cfg.port, timeout=cfg.connect_timeout,
                           backoff_min=cfg.backoff_min, backoff_max=cfg.backoff_max)
-    worker = CommsWorker(cfg, client, resolver, shared, actions, stop)
+    # Default to a throwaway settings path so tests never touch the real file.
+    settings_path = settings_path or os.path.join(
+        os.path.dirname(__file__), ".test_ui_settings.json")
+    worker = CommsWorker(cfg, client, resolver, shared, actions, stop,
+                         settings_path=settings_path)
     t = threading.Thread(target=worker.run, daemon=True)
     t.start()
     return shared, actions, stop, t
@@ -205,6 +209,64 @@ def test_worker_tracking_cycle():
         assert ":Td#" in server.received
     finally:
         stop.set(); t.join(timeout=2.0); server.close()
+
+
+def test_worker_menu_and_brightness(tmp_path):
+    server = MockOnStep()
+    cfg = _config(server.port)   # default_brightness_index=1, levels [.35,.65,1.0]
+    settings = str(tmp_path / "ui.json")
+    shared, actions, stop, t = _run_worker(cfg, server, settings_path=settings)
+    try:
+        assert _wait(lambda: shared.snapshot().connected)
+        assert shared.snapshot().brightness_index == 1
+        assert shared.snapshot().menu_open is False
+
+        # Open the settings menu (KEY1+KEY3 chord); motion is stopped for safety.
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open)
+        assert _wait(lambda: ":Q#" in server.received)
+
+        # Joystick right cycles brightness up (1 -> 2) and persists it.
+        actions.put(inp.Action(inp.MOVE, "e"))
+        assert _wait(lambda: shared.snapshot().brightness_index == 2)
+        import json
+        assert json.load(open(settings))["brightness_index"] == 2
+
+        # Right again wraps 2 -> 0.
+        actions.put(inp.Action(inp.MOVE, "e"))
+        assert _wait(lambda: shared.snapshot().brightness_index == 0)
+
+        # While the menu is open, joystick directions must NOT slew the mount.
+        actions.put(inp.Action(inp.MOVE, "n"))
+        time.sleep(0.2)
+        assert ":Mn#" not in server.received
+
+        # Close the menu (chord again).
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open is False)
+    finally:
+        stop.set(); t.join(timeout=2.0); server.close()
+
+
+def test_brightness_persists_across_workers(tmp_path):
+    server = MockOnStep()
+    cfg = _config(server.port)
+    settings = str(tmp_path / "ui.json")
+    shared, actions, stop, t = _run_worker(cfg, server, settings_path=settings)
+    try:
+        assert _wait(lambda: shared.snapshot().connected)
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open)
+        actions.put(inp.Action(inp.MOVE, "e"))           # 1 -> 2
+        assert _wait(lambda: shared.snapshot().brightness_index == 2)
+    finally:
+        stop.set(); t.join(timeout=2.0)
+    # A fresh worker loads the persisted brightness.
+    shared2, actions2, stop2, t2 = _run_worker(cfg, server, settings_path=settings)
+    try:
+        assert _wait(lambda: shared2.snapshot().brightness_index == 2)
+    finally:
+        stop2.set(); t2.join(timeout=2.0); server.close()
 
 
 def test_worker_reconnects_after_drop():

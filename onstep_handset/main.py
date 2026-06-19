@@ -20,10 +20,12 @@ import time
 
 from . import protocol
 from .comms import OnStepClient
-from .config import HOST_CACHE, Config, load
+from .config import HOST_CACHE, SETTINGS_PATH, Config, load
 from .discovery import HostResolver
-from .inputs import (Action, InputController, MOVE, RATE_DOWN, RATE_UP, STOP,
-                     STOP_ALL, TRACK_CYCLE)
+from .inputs import (Action, InputController, MENU, MOVE, RATE_DOWN, RATE_UP,
+                     STOP, STOP_ALL, TRACK_CYCLE)
+from .display import MENU_ITEMS
+from .settings import load_settings, save_settings
 from .state import MountState, SharedState
 
 log = logging.getLogger("onstep_handset")
@@ -39,7 +41,7 @@ class CommsWorker:
 
     def __init__(self, cfg: Config, client: OnStepClient, resolver: HostResolver,
                  shared: SharedState, actions: "queue.Queue[Action]",
-                 stop_event: threading.Event) -> None:
+                 stop_event: threading.Event, settings_path: str | None = None) -> None:
         self.cfg = cfg
         self.client = client
         self.resolver = resolver
@@ -50,11 +52,19 @@ class CommsWorker:
         self.tracking_index = cfg.default_tracking_index
         self._poll_interval = 1.0 / cfg.poll_hz
         self._fail_count = 0
+        # UI / settings menu state.
+        self._settings_path = settings_path or SETTINGS_PATH
+        persisted = load_settings(self._settings_path)
+        self.brightness_index = self._clamp_brightness(
+            persisted.get("brightness_index", cfg.default_brightness_index))
+        self.menu_open = False
+        self.menu_index = 0
 
     def run(self) -> None:
         self.shared.update(rate_index=self.rate_index,
                            rate_label=self._rate_label(),
-                           tracking_mode=self._tracking_label())
+                           tracking_mode=self._tracking_label(),
+                           brightness_index=self.brightness_index)
         next_poll = 0.0
         while not self.stop_event.is_set():
             if not self.client.connected:
@@ -120,6 +130,14 @@ class CommsWorker:
 
     def _handle(self, action: Action) -> None:
         kind = action.kind
+        # The KEY1+KEY3 chord toggles the menu in any mode.
+        if kind == MENU:
+            self._toggle_menu()
+            return
+        # While the menu is open, the controls navigate it instead of the mount.
+        if self.menu_open:
+            self._handle_menu(action)
+            return
         if kind == MOVE:
             self._safe(lambda: self.client.send(protocol.move(action.arg)))
         elif kind == STOP:
@@ -132,6 +150,52 @@ class CommsWorker:
             self._change_rate(+1)
         elif kind == TRACK_CYCLE:
             self._cycle_tracking()
+
+    # --- settings menu --------------------------------------------------
+
+    def _toggle_menu(self) -> None:
+        self.menu_open = not self.menu_open
+        if self.menu_open:
+            # Stop any motion before the user fiddles with settings.
+            self._safe(lambda: self.client.send(protocol.STOP_ALL))
+            self.menu_index = 0
+        self.shared.update(menu_open=self.menu_open, menu_index=self.menu_index)
+
+    def _handle_menu(self, action: Action) -> None:
+        """Navigate the settings menu. Joystick up/down selects a row, left/right
+        (or KEY1/KEY3) changes its value, centre press or KEY2 closes the menu."""
+        kind = action.kind
+        if kind == MOVE and action.arg == "n":          # up
+            self.menu_index = (self.menu_index - 1) % len(MENU_ITEMS)
+            self.shared.update(menu_index=self.menu_index)
+        elif kind == MOVE and action.arg == "s":        # down
+            self.menu_index = (self.menu_index + 1) % len(MENU_ITEMS)
+            self.shared.update(menu_index=self.menu_index)
+        elif (kind == MOVE and action.arg == "w") or kind == RATE_DOWN:
+            self._adjust_setting(-1)
+        elif (kind == MOVE and action.arg == "e") or kind == RATE_UP:
+            self._adjust_setting(+1)
+        elif kind in (STOP_ALL, TRACK_CYCLE):           # centre or KEY2: close
+            self._toggle_menu()
+        # STOP (joystick release) is ignored in the menu.
+
+    def _adjust_setting(self, delta: int) -> None:
+        item = MENU_ITEMS[self.menu_index]
+        if item == "Brightness":
+            self._cycle_brightness(delta)
+
+    def _cycle_brightness(self, delta: int) -> None:
+        n = len(self.cfg.brightness_levels)
+        self.brightness_index = (self.brightness_index + delta) % n
+        self.shared.update(brightness_index=self.brightness_index)
+        save_settings({"brightness_index": self.brightness_index}, self._settings_path)
+
+    def _clamp_brightness(self, idx) -> int:
+        try:
+            idx = int(idx)
+        except (TypeError, ValueError):
+            return self.cfg.default_brightness_index
+        return max(0, min(idx, len(self.cfg.brightness_levels) - 1))
 
     def _change_rate(self, delta: int) -> None:
         self.rate_index = max(0, min(self.rate_index + delta,
@@ -192,7 +256,8 @@ def _ui_loop(cfg: Config, shared: SharedState, stop_event: threading.Event) -> N
     from .display import Display
 
     display = Display(dc=cfg.pins["lcd_dc"], rst=cfg.pins["lcd_rst"],
-                      bl=cfg.pins["lcd_bl"], spi_hz=cfg.spi_hz, rotation=cfg.rotation)
+                      bl=cfg.pins["lcd_bl"], spi_hz=cfg.spi_hz, rotation=cfg.rotation,
+                      brightness_levels=cfg.brightness_levels)
     frame_interval = 1.0 / cfg.ui_fps
     try:
         display.render(shared.snapshot(), force=True)

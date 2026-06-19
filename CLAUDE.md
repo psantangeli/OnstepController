@@ -79,12 +79,23 @@ release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and 
 - `onstep_handset/state.py` — frozen `MountState` snapshot + `SharedState`
   (single `Lock`, comms thread writes, UI reads).
 - `onstep_handset/inputs.py` — gpiozero `Button`s (active-low, `pull_up=True`) →
-  `Action`s on the queue. Joystick = hold-to-move/release-to-stop.
+  `Action`s on the queue. Joystick = hold-to-move/release-to-stop. **KEY1+KEY3
+  chord** emits `MENU`: to keep it clean, KEY1/KEY3 rate actions fire on *release*
+  and are suppressed if a chord fired while either was held.
 - `onstep_handset/display.py` — luma.lcd ST7789 wrapper + `render(state)`.
+  **Monochrome** (grey on black, for a red night-vision filter); all greys are
+  scaled by the current brightness factor. Renders the status screen or, when
+  `menu_open`, the settings menu. `MENU_ITEMS` lives here (imported by main.py).
+- `onstep_handset/settings.py` — tiny JSON persistence for user-set values
+  (brightness), to `.ui_settings.json`. Separate from `config.yaml` (committed
+  defaults) because these change on the device and must stick across restarts.
 - `onstep_handset/main.py` — config load, thread wiring, signal handling, the
-  `CommsWorker` and UI loop.
+  `CommsWorker` and UI loop. The worker owns menu/brightness state: `MENU`
+  toggles the menu (and sends `:Q#`); while `menu_open`, controls navigate the
+  menu instead of the mount; brightness changes are persisted via `settings.py`.
 - `onstep_handset/config.py` / `config.yaml` — config + optional
-  `config.local.yaml` override (gitignored).
+  `config.local.yaml` override (gitignored). `brightness_levels` are grey-intensity
+  multipliers (the HAT backlight is on/off only, so brightness == grey level).
 
 ## Hardware facts (don't re-derive these)
 

@@ -14,25 +14,33 @@ from .state import MountState
 
 log = logging.getLogger(__name__)
 
-# Colours (RGB).
-_BG = (0, 0, 0)
-_FG = (220, 220, 220)
-_DIM = (110, 110, 110)
-_OK = (60, 200, 90)
-_WARN = (230, 180, 40)
-_ERR = (230, 60, 60)
-_ACCENT = (90, 160, 240)
+# The display is rendered MONOCHROME (grey on black) so it stays legible behind a
+# red night-vision filter -- no hues, state is shown by text and grey intensity.
+# Base grey levels (at full brightness); scaled by the current brightness factor.
+_INK = 255      # primary text
+_DIM = 140      # labels / secondary
+_FAINT = 80     # divider lines / inactive flags
+_BLACK = (0, 0, 0)
+
+#: Settings-menu rows (extensible; only Brightness for now). Shared with main.py.
+MENU_ITEMS = ["Brightness"]
+
+
+def _grey(base: int, factor: float) -> tuple[int, int, int]:
+    v = max(0, min(255, int(round(base * factor))))
+    return (v, v, v)
 
 
 class Display:
     """luma.lcd ST7789 wrapper with a single render(state) entry point."""
 
     def __init__(self, dc: int, rst: int, bl: int, spi_hz: int = 32_000_000,
-                 rotation: int = 0) -> None:
+                 rotation: int = 0, brightness_levels: list[float] | None = None) -> None:
         # Lazy imports so the module loads on a dev machine without luma/spidev.
         from luma.core.interface.serial import spi
         from luma.lcd.device import st7789
 
+        self._brightness_levels = brightness_levels or [0.35, 0.65, 1.0]
         # Backlight (BL) is managed by the *device* (gpio_LIGHT), not the serial
         # bus. On the Waveshare 1.3" HAT BL is active-high, so active_low=False.
         serial = spi(port=0, device=0, gpio_DC=dc, gpio_RST=rst, bus_speed_hz=spi_hz)
@@ -43,7 +51,13 @@ class Display:
             pass
         self._fonts = _load_fonts()
         self._last_key: tuple | None = None
-        log.info("display ready (st7789 240x240, rot=%d)", rotation)
+        log.info("display ready (st7789 240x240, rot=%d, mono)", rotation)
+
+    def _factor(self, brightness_index: int) -> float:
+        levels = self._brightness_levels
+        if 0 <= brightness_index < len(levels):
+            return levels[brightness_index]
+        return levels[-1]
 
     def render(self, state: MountState, force: bool = False) -> None:
         """Repaint the screen if ``state`` changed (or ``force`` is set)."""
@@ -56,48 +70,82 @@ class Display:
     def _paint(self, s: MountState) -> None:
         from luma.core.render import canvas
 
-        f_small, f_med, f_big, f_label = self._fonts
+        factor = self._factor(s.brightness_index)
+        ink = _grey(_INK, factor)
+        dim = _grey(_DIM, factor)
+        faint = _grey(_FAINT, factor)
+
         with canvas(self._device) as draw:
-            draw.rectangle(self._device.bounding_box, fill=_BG)
-
-            # Title bar: connection / search / error.
-            if s.searching:
-                draw.text((6, 4), "SEARCHING…", font=f_med, fill=_WARN)
-            elif not s.connected:
-                draw.text((6, 4), "DISCONNECTED", font=f_med, fill=_ERR)
-            elif s.has_error:
-                draw.text((6, 4), f"ERROR {s.error_code}", font=f_med, fill=_ERR)
+            draw.rectangle(self._device.bounding_box, fill=_BLACK)
+            if s.menu_open:
+                self._paint_menu(draw, s, ink, dim, faint)
             else:
-                draw.text((6, 4), "ONSTEP", font=f_med, fill=_OK)
-                if s.host:
-                    draw.text((104, 9), s.host, font=f_label, fill=_DIM)
-            draw.line((0, 30, 240, 30), fill=_DIM)
+                self._paint_status(draw, s, ink, dim, faint)
 
-            # Coordinates (the headline data).
-            draw.text((6, 42), "RA", font=f_label, fill=_DIM)
-            draw.text((6, 58), s.ra, font=f_big, fill=_FG)
-            draw.text((6, 96), "DEC", font=f_label, fill=_DIM)
-            draw.text((6, 112), s.dec, font=f_big, fill=_FG)
+    def _paint_status(self, draw, s: MountState, ink, dim, faint) -> None:
+        f_small, f_med, f_big, f_label = self._fonts
 
-            draw.line((0, 150, 240, 150), fill=_DIM)
+        # Title bar: connection / search / error -- conveyed by text, not colour.
+        if s.searching:
+            draw.text((6, 4), "SEARCHING...", font=f_med, fill=ink)
+        elif not s.connected:
+            draw.text((6, 4), "DISCONNECTED", font=f_med, fill=ink)
+        elif s.has_error:
+            draw.text((6, 4), f"ERROR {s.error_code}", font=f_med, fill=ink)
+        else:
+            draw.text((6, 4), "ONSTEP", font=f_med, fill=ink)
+            if s.host:
+                draw.text((104, 9), s.host, font=f_label, fill=dim)
+        draw.line((0, 30, 240, 30), fill=faint)
 
-            # Slew rate (left) and tracking mode (right).
-            draw.text((6, 156), "RATE", font=f_label, fill=_DIM)
-            draw.text((6, 170), s.rate_label or "--", font=f_med, fill=_ACCENT)
+        # Coordinates (the headline data).
+        draw.text((6, 42), "RA", font=f_label, fill=dim)
+        draw.text((6, 58), s.ra, font=f_big, fill=ink)
+        draw.text((6, 96), "DEC", font=f_label, fill=dim)
+        draw.text((6, 112), s.dec, font=f_big, fill=ink)
 
-            draw.text((124, 156), "TRACK", font=f_label, fill=_DIM)
-            trk_off = s.tracking_mode.strip().lower() in ("", "off")
-            draw.text((124, 170), s.tracking_mode or "--", font=f_med,
-                      fill=_DIM if trk_off else _OK)
+        draw.line((0, 150, 240, 150), fill=faint)
 
-            # Status flags row.
-            y = 212
-            self._flag(draw, 6, y, "SLEW", s.slewing, f_small, on_colour=_WARN)
-            self._flag(draw, 96, y, "PARK", s.parked, f_small)
+        # Slew rate (left) and tracking mode (right).
+        draw.text((6, 156), "RATE", font=f_label, fill=dim)
+        draw.text((6, 170), s.rate_label or "--", font=f_med, fill=ink)
 
-    def _flag(self, draw, x, y, label, on, font, on_colour=_OK):
-        colour = on_colour if on else _DIM
-        draw.text((x, y), f"{label}", font=font, fill=colour)
+        draw.text((124, 156), "TRACK", font=f_label, fill=dim)
+        trk_off = s.tracking_mode.strip().lower() in ("", "off")
+        draw.text((124, 170), s.tracking_mode or "--", font=f_med,
+                  fill=dim if trk_off else ink)
+
+        # Status flags row: bright when active, faint when not.
+        y = 212
+        draw.text((6, y), "SLEW", font=f_small, fill=ink if s.slewing else faint)
+        draw.text((96, y), "PARK", font=f_small, fill=ink if s.parked else faint)
+
+    def _paint_menu(self, draw, s: MountState, ink, dim, faint) -> None:
+        f_small, f_med, f_big, f_label = self._fonts
+
+        draw.text((6, 4), "SETTINGS", font=f_med, fill=ink)
+        draw.line((0, 30, 240, 30), fill=faint)
+
+        y = 50
+        for i, item in enumerate(MENU_ITEMS):
+            selected = (i == s.menu_index)
+            colour = ink if selected else dim
+            marker = ">" if selected else " "
+            draw.text((6, y), f"{marker} {item}", font=f_med, fill=colour)
+            if item == "Brightness":
+                draw.text((150, y), self._brightness_bar(s.brightness_index),
+                          font=f_med, fill=colour)
+            y += 30
+
+        # Footer: controls hint.
+        draw.line((0, 192, 240, 192), fill=faint)
+        draw.text((6, 200), "Left/Right: change", font=f_small, fill=dim)
+        draw.text((6, 220), "Center or KEY2: back", font=f_small, fill=dim)
+
+    def _brightness_bar(self, index: int) -> str:
+        n = len(self._brightness_levels)
+        filled = max(1, min(index + 1, n))
+        return "[" + "#" * filled + "-" * (n - filled) + "]"
 
     def close(self) -> None:
         try:
@@ -162,4 +210,5 @@ def _load_fonts():
 def _render_key(s: MountState) -> tuple:
     """Everything that affects the rendered pixels -- used to skip no-op repaints."""
     return (s.connected, s.searching, s.host, s.ra, s.dec, s.tracking_mode,
-            s.slewing, s.parked, s.error_code, s.rate_label)
+            s.slewing, s.parked, s.error_code, s.rate_label,
+            s.brightness_index, s.menu_open, s.menu_index)

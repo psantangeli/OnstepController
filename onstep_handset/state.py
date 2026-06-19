@@ -27,6 +27,10 @@ class MountState:
     error_code: str = "0"
     rate_index: int = 0          # index into the configured slew_rates list
     rate_label: str = ""         # human label for the current rate
+    # UI / settings menu
+    brightness_index: int = 0    # index into config.brightness_levels
+    menu_open: bool = False      # settings menu showing instead of status
+    menu_index: int = 0          # selected row in the settings menu
 
     @property
     def has_error(self) -> bool:

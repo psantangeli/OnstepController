@@ -12,6 +12,8 @@ DEFAULT_CONFIG = os.path.join(_ROOT, "config.yaml")
 LOCAL_CONFIG = os.path.join(_ROOT, "config.local.yaml")
 #: Where the last successfully-discovered mount IP is remembered.
 HOST_CACHE = os.path.join(_ROOT, ".discovered_host")
+#: Persisted UI settings (e.g. brightness level), JSON.
+SETTINGS_PATH = os.path.join(_ROOT, ".ui_settings.json")
 
 
 @dataclass
@@ -36,6 +38,10 @@ class Config:
     discovery_subnet_prefix: int = 24
     discovery_scan_timeout: float = 0.3
     discovery_cache: bool = True
+    # Monochrome "brightness" = grey-intensity multipliers (HAT backlight is
+    # on/off only). Cycled in the settings menu; the chosen index is persisted.
+    brightness_levels: list[float] = field(default_factory=lambda: [0.35, 0.65, 1.0])
+    default_brightness_index: int = 1
 
 
 def _deep_merge(base: dict, override: dict) -> dict:
@@ -82,12 +88,18 @@ def load(path: str | None = None) -> Config:
         discovery_subnet_prefix=int(disc.get("subnet_prefix", 24)),
         discovery_scan_timeout=float(disc.get("scan_timeout", 0.3)),
         discovery_cache=bool(disc.get("cache", True)),
+        brightness_levels=[float(x) for x in ui.get("brightness_levels", [0.35, 0.65, 1.0])],
+        default_brightness_index=int(ui.get("default_brightness_index", 1)),
     )
     if not cfg.slew_rates:
         raise ValueError("slew_rates must not be empty")
     if not cfg.tracking_modes:
         raise ValueError("tracking_modes must not be empty")
+    if not cfg.brightness_levels:
+        raise ValueError("brightness_levels must not be empty")
     cfg.default_rate_index = max(0, min(cfg.default_rate_index, len(cfg.slew_rates) - 1))
     cfg.default_tracking_index = max(
         0, min(cfg.default_tracking_index, len(cfg.tracking_modes) - 1))
+    cfg.default_brightness_index = max(
+        0, min(cfg.default_brightness_index, len(cfg.brightness_levels) - 1))
     return cfg

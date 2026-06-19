@@ -16,10 +16,26 @@ ST-4 port** — so motion is commanded over the network rather than a guide cabl
 - **Emergency stop** — joystick centre press halts all motion (`:Q#`).
 - **Tracking modes** — KEY2 cycles tracking rate: Off → Sidereal → Solar →
   Lunar (configurable; "king" available). Useful for solar observing.
+- **Settings menu** — press **KEY1 + KEY3 together** to open it. Joystick
+  left/right changes the selected setting, centre press or KEY2 closes it. The
+  only setting for now is **Brightness** (3 levels), which is **remembered**
+  across restarts.
+- **Night-vision friendly** — the screen is rendered **monochrome** (grey on
+  black) so it stays readable behind a red filter. Since the HAT backlight is
+  on/off only, "brightness" changes the grey intensity used to draw.
 - **Live status screen** — RA/Dec, current rate, tracking / slewing / parked
   flags, and a connection/error banner.
 
 GoTo, object catalogs, park/home, and focuser control are deferred.
+
+### Controls
+
+| Control | Normal mode | Settings menu |
+|---|---|---|
+| Joystick N/S/E/W | Slew (hold) | Up/Down select, Left/Right change value |
+| Joystick centre | Emergency STOP | Close menu |
+| KEY1 / KEY3 | Slew rate down / up | (held together anywhere) open/close menu |
+| KEY2 | Cycle tracking mode | Close menu |
 
 ## Networking & auto-discovery
 
