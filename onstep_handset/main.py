@@ -35,6 +35,10 @@ log = logging.getLogger("onstep_handset")
 #: having changed).
 REDISCOVER_AFTER = 3
 
+#: How long the software-update screen lingers before restart / clearing.
+_UPDATE_RESTART_DELAY = 1.5
+_UPDATE_RESULT_DELAY = 2.5
+
 
 class CommsWorker:
     """Runs on the comms thread: command dispatch + status polling + reconnect."""
@@ -208,12 +212,14 @@ class CommsWorker:
         self.shared.update(menu_confirm=value)
 
     def _run_action(self, item: str) -> None:
-        if item == "Park":
-            self._park_home()
-        # Close the menu so the user watches the slew on the status screen.
+        # Close the menu before acting.
         self.menu_open = False
         self.menu_confirm = False
         self.shared.update(menu_open=False, menu_confirm=False)
+        if item == "Park":
+            self._park_home()
+        elif item == "Update":
+            self._firmware_update()
 
     def _park_home(self) -> None:
         """Return the mount to its power-on (home) position and stop tracking.
@@ -225,6 +231,24 @@ class CommsWorker:
         if "off" in self.cfg.tracking_modes:
             self.tracking_index = self.cfg.tracking_modes.index("off")
             self.shared.update(tracking_mode=self._tracking_label())
+
+    def _firmware_update(self) -> None:
+        """Pull the latest handset software; on success exit so systemd relaunches
+        it with the new code. Shows progress/result on the update screen."""
+        from . import firmware
+        self.shared.update(update_msg="Updating...")
+        result = firmware.update()
+        if result.ok and result.changed:
+            if firmware.under_systemd():
+                self.shared.update(update_msg="Updated.\nRestarting...")
+                time.sleep(_UPDATE_RESTART_DELAY)
+                self.stop_event.set()          # Restart=always relaunches us
+                return
+            self.shared.update(update_msg="Updated.\nRestart to apply")
+        else:
+            self.shared.update(update_msg=result.message)
+        time.sleep(_UPDATE_RESULT_DELAY)
+        self.shared.update(update_msg="")      # back to the status screen
 
     def _cycle_brightness(self, delta: int) -> None:
         n = len(self.cfg.brightness_levels)

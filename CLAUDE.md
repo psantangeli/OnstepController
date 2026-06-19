@@ -96,9 +96,14 @@ release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and 
   `CommsWorker` and UI loop. The worker owns menu state: `MENU` (KEY2) toggles
   the menu (and sends `:Q#`); while `menu_open`, controls navigate the menu
   instead of the mount. Rows (`MENU_ITEMS` in display.py): Tracking, Brightness
-  (value rows, left/right cycles), and Park (an `ACTION_ITEMS` row — right arms a
-  confirm, right again runs it). Park = go-to-home (`:hC#`, which returns to the
-  power-on position and stops tracking). Brightness persists via `settings.py`.
+  (value rows, left/right cycles), and Park / Update (`ACTION_ITEMS` rows — right
+  arms a confirm, right again runs). Park = go-to-home (`:hC#`). Update = pull new
+  handset software then exit so systemd relaunches with it. Brightness persists
+  via `settings.py`.
+- `onstep_handset/firmware.py` — in-app updater: `git pull --ff-only` + deps if
+  `requirements.txt` changed; returns `UpdateResult(ok, changed, message)`. Does
+  NOT restart — the caller exits and `Restart=always` relaunches (no sudo needed).
+  `under_systemd()` gates the exit (manual runs just show "restart to apply").
 - `onstep_handset/config.py` / `config.yaml` — config + optional
   `config.local.yaml` override (gitignored). `brightness_levels` are grey-intensity
   multipliers (the HAT backlight is on/off only, so brightness == grey level).

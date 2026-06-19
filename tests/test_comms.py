@@ -309,6 +309,58 @@ def test_worker_park_confirm_can_be_cancelled(tmp_path):
         stop.set(); t.join(timeout=2.0); server.close()
 
 
+def _open_menu_at(actions, shared, index):
+    actions.put(inp.Action(inp.MENU))
+    assert _wait(lambda: shared.snapshot().menu_open)
+    for _ in range(index):
+        actions.put(inp.Action(inp.MOVE, "s"))
+    assert _wait(lambda: shared.snapshot().menu_index == index)
+
+
+def test_worker_update_applies_and_exits(tmp_path, monkeypatch):
+    import onstep_handset.firmware as fw
+    import onstep_handset.main as m
+    monkeypatch.setattr(fw, "update",
+                        lambda repo_dir=None: fw.UpdateResult(True, True, "Updated"))
+    monkeypatch.setattr(fw, "under_systemd", lambda: True)
+    monkeypatch.setattr(m, "_UPDATE_RESTART_DELAY", 0.05)
+    server = MockOnStep()
+    cfg = _config(server.port)
+    shared, actions, stop, t = _run_worker(cfg, server, settings_path=str(tmp_path / "ui.json"))
+    try:
+        assert _wait(lambda: shared.snapshot().connected)
+        _open_menu_at(actions, shared, 3)            # Update is row 3
+        actions.put(inp.Action(inp.MOVE, "e"))       # arm
+        assert _wait(lambda: shared.snapshot().menu_confirm)
+        actions.put(inp.Action(inp.MOVE, "e"))       # run
+        # Under systemd, a successful update exits the app (systemd relaunches).
+        assert _wait(lambda: stop.is_set(), timeout=3.0)
+    finally:
+        stop.set(); t.join(timeout=2.0); server.close()
+
+
+def test_worker_update_up_to_date_stays_running(tmp_path, monkeypatch):
+    import onstep_handset.firmware as fw
+    import onstep_handset.main as m
+    monkeypatch.setattr(fw, "update",
+                        lambda repo_dir=None: fw.UpdateResult(True, False, "Already up to date"))
+    monkeypatch.setattr(m, "_UPDATE_RESULT_DELAY", 0.1)
+    server = MockOnStep()
+    cfg = _config(server.port)
+    shared, actions, stop, t = _run_worker(cfg, server, settings_path=str(tmp_path / "ui.json"))
+    try:
+        assert _wait(lambda: shared.snapshot().connected)
+        _open_menu_at(actions, shared, 3)
+        actions.put(inp.Action(inp.MOVE, "e"))       # arm
+        actions.put(inp.Action(inp.MOVE, "e"))       # run
+        assert _wait(lambda: shared.snapshot().update_msg == "Already up to date")
+        # Message clears and the app keeps running (not exited).
+        assert _wait(lambda: shared.snapshot().update_msg == "")
+        assert not stop.is_set()
+    finally:
+        stop.set(); t.join(timeout=2.0); server.close()
+
+
 def test_brightness_persists_across_workers(tmp_path):
     server = MockOnStep()
     cfg = _config(server.port)

@@ -23,9 +23,9 @@ _FAINT = 80     # divider lines / inactive flags
 _BLACK = (0, 0, 0)
 
 #: Settings-menu rows (extensible). Shared with main.py.
-MENU_ITEMS = ["Tracking", "Brightness", "Park"]
+MENU_ITEMS = ["Tracking", "Brightness", "Park", "Update"]
 #: Rows that perform an action (with confirm) rather than cycling a value.
-ACTION_ITEMS = {"Park"}
+ACTION_ITEMS = {"Park", "Update"}
 
 
 def _grey(base: int, factor: float) -> tuple[int, int, int]:
@@ -79,10 +79,21 @@ class Display:
 
         with canvas(self._device) as draw:
             draw.rectangle(self._device.bounding_box, fill=_BLACK)
-            if s.menu_open:
+            if s.update_msg:
+                self._paint_message(draw, "SOFTWARE UPDATE", s.update_msg, ink, dim, faint)
+            elif s.menu_open:
                 self._paint_menu(draw, s, ink, dim, faint)
             else:
                 self._paint_status(draw, s, ink, dim, faint)
+
+    def _paint_message(self, draw, title, message, ink, dim, faint) -> None:
+        f_small, f_med, f_big, f_label = self._fonts
+        draw.text((6, 4), title, font=f_med, fill=ink)
+        draw.line((0, 30, 240, 30), fill=faint)
+        y = 60
+        for line in str(message).split("\n"):
+            draw.text((6, y), line, font=f_med, fill=ink)
+            y += 28
 
     def _paint_status(self, draw, s: MountState, ink, dim, faint) -> None:
         f_small, f_med, f_big, f_label = self._fonts
@@ -149,7 +160,7 @@ class Display:
             return s.tracking_mode or "--"
         if item == "Brightness":
             return self._brightness_bar(s.brightness_index)
-        if item == "Park":
+        if item in ACTION_ITEMS:
             # Action row: ">" runs it; arms a confirm step first.
             return "Sure? >" if (selected and s.menu_confirm) else "Run >"
         return ""
@@ -223,4 +234,5 @@ def _render_key(s: MountState) -> tuple:
     """Everything that affects the rendered pixels -- used to skip no-op repaints."""
     return (s.connected, s.searching, s.host, s.ra, s.dec, s.tracking_mode,
             s.slewing, s.parked, s.at_home, s.error_code, s.rate_label,
-            s.brightness_index, s.menu_open, s.menu_index, s.menu_confirm)
+            s.brightness_index, s.menu_open, s.menu_index, s.menu_confirm,
+            s.update_msg)

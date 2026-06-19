@@ -32,6 +32,7 @@ class MountState:
     menu_open: bool = False      # settings menu showing instead of status
     menu_index: int = 0          # selected row in the settings menu
     menu_confirm: bool = False   # an action row (e.g. Park) is armed for confirm
+    update_msg: str = ""         # non-empty -> show the software-update screen
 
     @property
     def has_error(self) -> bool:

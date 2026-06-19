@@ -22,6 +22,9 @@ ST-4 port** — so motion is commanded over the network rather than a guide cabl
   - **Park** — returns the mount to its power-on (home) position and stops
     tracking (sends `:hC#`). Requires a confirm (right to arm, right again to
     run). Assumes you always power on at the home position; see below.
+  - **Update** — updates the *handset* software in place (`git pull` + deps),
+    then the app restarts itself with the new code. Requires a confirm. Needs
+    internet (works on your home WiFi). See below.
 - **Night-vision friendly** — the screen is rendered **monochrome** (grey on
   black) so it stays readable behind a red filter. Since the HAT backlight is
   on/off only, "brightness" changes the grey intensity used to draw.
@@ -46,6 +49,24 @@ turns tracking off automatically. The workflow it assumes:
 
 This deliberately does *not* use OnStep's saved-park (`:hP#`/`:hQ#`) feature —
 it's just go-to-home, which is exactly "return to where it started".
+
+### Update (from the handset)
+
+The **Update** menu item updates the handset software without SSH: it runs
+`git pull --ff-only` (and reinstalls Python deps only if `requirements.txt`
+changed), then **exits so systemd relaunches it** with the new code — no sudo
+needed (it never calls `systemctl` itself). Requirements:
+
+- **Internet access** — works on your home WiFi; it can't pull in the field with
+  no upstream.
+- **A clean working tree** — keep your local changes in the gitignored
+  `config.local.yaml` (overrides) so the tracked `config.yaml` stays pristine and
+  the fast-forward pull never conflicts. Brightness, the discovered IP, etc. are
+  already in gitignored files.
+
+If the pull fails (no internet, or local edits to tracked files) it shows the
+error on screen and keeps running — nothing is half-applied. This updates the
+*handset* app, not the OnStep mount firmware.
 
 ### Controls
 
