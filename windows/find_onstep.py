@@ -12,13 +12,17 @@ This reuses the EXACT discovery code from the hand controller
 
 Editing the hosts file needs Administrator, so the script self-elevates (UAC).
 
-Usage (on the telescope PC, Python 3 installed):
+Usage (on the Windows telescope PC, Python 3 installed):
     python windows\find_onstep.py            # discover now + update hosts
     python windows\find_onstep.py --install  # run at logon (Task Scheduler)
     python windows\find_onstep.py --uninstall
     python windows\find_onstep.py --once     # don't loop/retry; single attempt
 
 Then point the ASCOM OnStep/LX200 driver at host "onstep", port 9999.
+
+On macOS/Linux this runs as a **discovery-only** helper: it prints the mount's
+IP on stdout (and caches it) but does NOT modify /etc/hosts and has no
+--install. Handy for INDI/Alpaca, or:  IP=$(python3 windows/find_onstep.py)
 """
 
 from __future__ import annotations
@@ -165,23 +169,38 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     _setup_logging(args.quiet)
+    is_windows = (os.name == "nt")
 
-    # Everything below needs admin (hosts file / scheduled task). Self-elevate.
-    if os.name == "nt" and not is_admin():
+    # The hosts-file pinning + scheduled task are Windows-only. On macOS/Linux
+    # this runs as a discovery-only helper (prints the IP; never touches /etc/hosts).
+    if args.install or args.uninstall:
+        if not is_windows:
+            log.error("--install / --uninstall is Windows-only. On macOS/Linux this "
+                      "tool just discovers and prints the IP.")
+            return 2
+        if not is_admin():
+            log.info("not elevated; relaunching with Administrator rights...")
+            return 0 if elevate() else 3
+        install_task() if args.install else uninstall_task()
+        return 0
+
+    # On Windows, writing the hosts file needs admin -> self-elevate up front.
+    if is_windows and not is_admin():
         log.info("not elevated; relaunching with Administrator rights...")
         return 0 if elevate() else 3
-
-    if args.install:
-        install_task()
-        return 0
-    if args.uninstall:
-        uninstall_task()
-        return 0
 
     ip = discover_ip(args)
     if not ip:
         log.error("OnStep not found on the local network.")
         return 1
+
+    if not is_windows:
+        # Discovery-only: the IP is already cached by discover(); print it on
+        # stdout (logs go to stderr) so it's easy to capture in a shell.
+        print(ip)
+        log.info("OnStep found at %s. Use this IP in INDI/Alpaca, or add a line "
+                 "'%s\t%s' to /etc/hosts yourself (needs sudo).", ip, ip, args.hostname)
+        return 0
 
     try:
         changed = update_hosts(hosts_path(), args.hostname, ip)

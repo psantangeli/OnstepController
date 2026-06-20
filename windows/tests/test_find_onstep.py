@@ -108,3 +108,24 @@ def test_discover_ip_not_found_returns_none(monkeypatch):
     monkeypatch.setattr(find_onstep.discovery, "discover",
                         lambda **kw: None)
     assert find_onstep.discover_ip(_args()) is None
+
+
+# --- cross-platform behaviour (discovery-only on macOS/Linux) -----------------
+
+def test_main_prints_ip_on_posix(monkeypatch, capsys):
+    if os.name == "nt":
+        import pytest
+        pytest.skip("posix-only behaviour")
+    monkeypatch.setattr(find_onstep, "_setup_logging", lambda quiet: None)
+    monkeypatch.setattr(find_onstep, "discover_ip", lambda args: "192.168.7.7")
+    rc = find_onstep.main([])
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "192.168.7.7"   # IP on stdout
+
+
+def test_install_is_windows_only_on_posix(monkeypatch):
+    if os.name == "nt":
+        import pytest
+        pytest.skip("posix-only behaviour")
+    monkeypatch.setattr(find_onstep, "_setup_logging", lambda quiet: None)
+    assert find_onstep.main(["--install"]) == 2

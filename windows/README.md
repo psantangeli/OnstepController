@@ -84,10 +84,24 @@ Other flags: `--hostname <name>` (default `onstep`), `--port <n>` (9999),
   drivers can use `onstep.local` directly — but the hosts-file approach is more
   reliable and works with drivers that don't do mDNS.
 
+## macOS / Linux (discovery-only)
+
+The hosts-pinning and `--install` are Windows-only. On macOS/Linux the same
+script runs as a **discovery-only** helper — it prints the mount's IP on stdout
+(and caches it) but never touches `/etc/hosts`:
+
+```bash
+python3 windows/find_onstep.py            # prints e.g. 192.168.4.20
+IP=$(python3 windows/find_onstep.py)      # capture it for INDI/Alpaca/scripts
+```
+
+Use that IP directly in INDI/Alpaca, or add `<ip>  onstep` to `/etc/hosts`
+yourself (`sudo`). (No `--install`; logs go to stderr so stdout is just the IP.)
+
 ## Tests
 
-`tests/test_find_onstep.py` covers the hosts rewrite and the discovery reuse
-(against a mock OnStep). Runs on any OS:
+`tests/test_find_onstep.py` covers the hosts rewrite, the discovery reuse
+(against a mock OnStep), and the macOS/Linux discovery-only path. Runs on any OS:
 
 ```
 python -m pytest windows/tests/
