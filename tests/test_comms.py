@@ -78,11 +78,12 @@ class MockOnStep:
             return "On-Step#"
         if cmd == protocol.GET_VERSION:
             return "10.28n#"
-        # Tracking enable/disable/rate commands DO reply "1#" on real OnStep --
-        # exercise the client's stale-reply draining.
-        if cmd in (":Te#", ":Td#", ":TQ#", ":TS#", ":TL#", ":TK#"):
+        # :Te#/:Td# reply "1#"; but the rate-SELECT commands (:TQ#/:TS#/:TL#/:TK#)
+        # return NOTHING on real OnStep. Modelling that is what guards against
+        # using query() for them (which would block + drop the connection).
+        if cmd in (":Te#", ":Td#"):
             return "1#"
-        return ""                  # motion / rate / home commands: no reply
+        return ""                  # rate-select / motion / home commands: no reply
 
     def close(self):
         self._stop.set()

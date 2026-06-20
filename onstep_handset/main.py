@@ -273,8 +273,8 @@ class CommsWorker:
 
         :hC# slews to home; OnStepX turns tracking off on arrival, and we send
         :Td# as well to be certain. Reflect tracking-off in the UI immediately."""
-        self._safe(lambda: self.client.send(protocol.GOTO_HOME))    # :hC# no reply
-        self._safe(lambda: self.client.query(protocol.track(False)))  # :Td# -> 1#
+        self._safe(lambda: self.client.send(protocol.GOTO_HOME))   # :hC#
+        self._safe(lambda: self.client.send(protocol.track(False)))  # :Td# (fire-and-forget)
         if "off" in self.cfg.tracking_modes:
             self.tracking_index = self.cfg.tracking_modes.index("off")
             self.shared.update(tracking_mode=self._tracking_label())
@@ -320,10 +320,13 @@ class CommsWorker:
         """Step the tracking mode by ``delta`` (wraps) and apply it on the mount."""
         self.tracking_index = (self.tracking_index + delta) % len(self.cfg.tracking_modes)
         mode = self.cfg.tracking_modes[self.tracking_index]
-        # Tracking commands reply "1#"; use query() to consume the ack so it can't
-        # corrupt the next status read. (A mode change may be several commands.)
+        # Use send() (fire-and-forget), NOT query(): the rate-select commands
+        # (:TQ#/:TS#/:TL#/:TK#) return nothing, so query() would block for the full
+        # read timeout and then drop the connection -- which also meant the :Te#
+        # that follows was never sent (tracking never started). Any ack from :Te#/
+        # :Td# is harmless: the next poll's _drain_input() discards it.
         for cmd in protocol.tracking_commands(mode):
-            self._safe(lambda c=cmd: self.client.query(c))
+            self._safe(lambda c=cmd: self.client.send(c))
         self.shared.update(tracking_mode=self._tracking_label())
 
     def _rate_code(self) -> str:
