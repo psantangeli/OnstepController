@@ -7,11 +7,20 @@ mount:
   # "auto" = discover the mount on whatever network we join (recommended: your
   # SSID is constant but the subnet varies home/field). Or set a fixed IP here.
   host: "auto"
-  port: 9999                # OnStep LX200 command port (9996-9999 valid; 9999 = standard)
+  # OnStep command ports: 9999 is the STANDARD channel, which OnStep treats as
+  # NON-persistent (it closes the connection after ~1s idle) -- bad for a client
+  # that holds one connection open and polls, because every hiccup drops it and a
+  # reconnect storm can exhaust the ESP32's few TCP slots. 9996-9998 are
+  # PERSISTENT (held open ~10s); 9996 is what OnStep's own Smart Hand Controller
+  # uses, so it's the right port for this poller. (If your build doesn't expose
+  # 9996, set this back to 9999 in config.local.yaml.)
+  port: 9996
   connect_timeout: 4.0      # seconds for socket connect/read before treating as failed
   # Reconnect backoff (seconds): starts at min, doubles up to max, with jitter.
-  backoff_min: 0.5
-  backoff_max: 8.0
+  # Generous on purpose: give the ESP32 time to free a slot between attempts so we
+  # don't hammer it into refusing every connection.
+  backoff_min: 1.0
+  backoff_max: 20.0
 
   # Network discovery (used when host: "auto"). Cascade: cached IP -> mDNS
   # hostname -> subnet sweep, confirming each candidate with :GVP#.

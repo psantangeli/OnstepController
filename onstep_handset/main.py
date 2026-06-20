@@ -32,8 +32,11 @@ log = logging.getLogger("onstep_handset")
 
 #: Consecutive connect failures on a known host before we re-run discovery
 #: (handles the Pi having moved to a different network / the mount's DHCP IP
-#: having changed).
-REDISCOVER_AFTER = 3
+#: having changed). Deliberately high: while we have a known-good IP we just keep
+#: reconnecting to it (one connection attempt each), rather than re-sweeping --
+#: re-discovery does an extra :GVP# probe per cycle, which only adds load to the
+#: OnStep's limited TCP slots and can race the real connect for the last slot.
+REDISCOVER_AFTER = 12
 
 #: How long the software-update screen lingers before restart / clearing.
 _UPDATE_RESTART_DELAY = 1.5

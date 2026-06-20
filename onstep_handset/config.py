@@ -70,10 +70,10 @@ def load(path: str | None = None) -> Config:
 
     cfg = Config(
         host=str(mount["host"]),
-        port=int(mount.get("port", 9999)),
+        port=int(mount.get("port", 9996)),
         connect_timeout=float(mount.get("connect_timeout", 4.0)),
-        backoff_min=float(mount.get("backoff_min", 0.5)),
-        backoff_max=float(mount.get("backoff_max", 8.0)),
+        backoff_min=float(mount.get("backoff_min", 1.0)),
+        backoff_max=float(mount.get("backoff_max", 20.0)),
         poll_hz=float(poll.get("hz", 2.0)),
         ui_fps=float(ui.get("fps", 5.0)),
         spi_hz=int(ui.get("spi_hz", 32_000_000)),
