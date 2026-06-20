@@ -99,13 +99,31 @@ the link drops.
 
 ## Install (on the Pi)
 
+Install it as a **git clone** (required — `scripts/update.sh` and the in-app
+Update both pull from git):
+
 ```bash
-git clone <this repo> ~/onstepController
+sudo apt install -y git
+git clone https://github.com/psantangeli/OnstepController.git ~/onstepController
 cd ~/onstepController
 # config.yaml defaults to mount.host: "auto" (discovery) -- usually no edit needed
-sudo ./scripts/install.sh        # enables SPI, builds venv, mDNS, installs service
+sudo ./scripts/install.sh        # installs git+deps, SPI, venv, mDNS, the service
 sudo systemctl restart onstep-handset
 journalctl -u onstep-handset -f  # watch logs
+```
+
+Already have a non-git copy at `~/onstepController` (set up by copying files)?
+Convert it to a clone in place — your gitignored local files (`.venv`,
+`config.local.yaml`, `.ui_settings.json`, `.discovered_host`) are kept:
+
+```bash
+sudo apt install -y git
+cd ~/onstepController
+git init -b main
+git remote add origin https://github.com/psantangeli/OnstepController.git
+git fetch origin
+git reset --hard origin/main     # overwrites tracked files with the repo versions
+git branch --set-upstream-to=origin/main main
 ```
 
 ## Run manually / dev
