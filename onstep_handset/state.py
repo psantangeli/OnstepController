@@ -17,6 +17,8 @@ class MountState:
     connected: bool = False
     searching: bool = False      # actively discovering the mount on the network
     host: str = ""               # resolved mount IP (for display)
+    self_ip: str = ""            # the Pi's own IP (shown while disconnected)
+    ssid: str = ""               # the Pi's WiFi SSID (shown while disconnected)
     ra: str = "--h --m --s"
     dec: str = "--° --' --\""
     tracking: bool = False       # mount actually tracking (from :GU#)

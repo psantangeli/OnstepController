@@ -58,6 +58,11 @@ GPIO callbacks ──Action──▶ queue.Queue ──▶ [comms thread] ──
 - **`_ui_loop`** (main thread) reads `SharedState` snapshots and repaints the LCD
   **only on change** (`Display.render` diffs a render key).
 - **`inputs.py`** GPIO callbacks just enqueue `Action`s — no I/O.
+- The worker **drains input every loop iteration, even while disconnected**, and
+  reconnect backoff waits are interruptible (`_idle_wait`) — so the handset never
+  locks the user out during a search. Opening the menu (KEY2) **pauses** discovery.
+  While disconnected the status screen shows the Pi's own IP/SSID so it can be
+  found without SSH.
 
 Why threads work on a single ARMv6 core: the work is I/O-bound and socket reads
 release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and UI

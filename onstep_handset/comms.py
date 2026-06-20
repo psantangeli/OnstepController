@@ -79,14 +79,20 @@ class OnStepClient:
                 pass
             self._sock = None
 
-    def sleep_backoff(self) -> None:
-        """Sleep for the current backoff interval, then grow it (capped)."""
+    def next_backoff(self) -> float:
+        """Return the next backoff delay (seconds) and grow it (capped).
+
+        Does NOT sleep -- the caller waits, so the wait can stay interruptible
+        (e.g. a button press should open the menu even mid-backoff)."""
         jitter = _JITTER[self._attempt % len(_JITTER)] * self._backoff
         delay = min(self._backoff + jitter, self.backoff_max)
-        log.debug("reconnect backoff %.2fs (attempt %d)", delay, self._attempt)
-        time.sleep(delay)
         self._attempt += 1
         self._backoff = min(self._backoff * 2, self.backoff_max)
+        return delay
+
+    def sleep_backoff(self) -> None:
+        """Blocking backoff sleep (kept for callers that don't need interruption)."""
+        time.sleep(self.next_backoff())
 
     # --- command I/O ----------------------------------------------------
 

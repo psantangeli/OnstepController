@@ -384,6 +384,28 @@ def test_brightness_persists_across_workers(tmp_path):
         stop2.set(); t2.join(timeout=2.0); server.close()
 
 
+def test_menu_opens_while_disconnected(tmp_path):
+    # Point the worker at a dead port so it never connects and stays searching.
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    dead_port = s.getsockname()[1]
+    s.close()
+    cfg = _config(dead_port)
+    shared, actions, stop, t = _run_worker(cfg, None, settings_path=str(tmp_path / "ui.json"))
+    try:
+        # It cannot connect...
+        time.sleep(0.3)
+        assert shared.snapshot().connected is False
+        # ...but KEY2 still opens the settings menu (input handled while searching).
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open, timeout=3.0)
+        # And closing it returns to searching.
+        actions.put(inp.Action(inp.MENU))
+        assert _wait(lambda: shared.snapshot().menu_open is False)
+    finally:
+        stop.set(); t.join(timeout=2.0)
+
+
 def test_worker_reconnects_after_drop():
     server = MockOnStep()
     port = server.port

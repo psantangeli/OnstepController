@@ -109,6 +109,19 @@ class Display:
                 draw.text((104, 9), s.host, font=f_label, fill=ink)
         draw.line((0, 30, 240, 30), fill=ink)
 
+        # While not connected, the RA/Dec area is blank -- use it to show where the
+        # handset itself is on the network (so it can be found without SSH) and a
+        # reminder that KEY2 still opens the menu.
+        if not s.connected:
+            draw.text((6, 42), "HANDSET IP", font=f_label, fill=ink)
+            draw.text((6, 58), s.self_ip or "(no network)", font=f_med, fill=ink)
+            draw.text((6, 96), "WIFI", font=f_label, fill=ink)
+            draw.text((6, 112), s.ssid or "(unknown)", font=f_med, fill=ink)
+            draw.line((0, 150, 240, 150), fill=ink)
+            draw.text((6, 160), "KEY2 = settings menu", font=f_small, fill=ink)
+            draw.text((6, 184), "(stops searching)", font=f_small, fill=ink)
+            return
+
         # Coordinates (the headline data).
         draw.text((6, 42), "RA", font=f_label, fill=ink)
         draw.text((6, 58), s.ra, font=f_big, fill=ink)
@@ -230,7 +243,7 @@ def _load_fonts():
 
 def _render_key(s: MountState) -> tuple:
     """Everything that affects the rendered pixels -- used to skip no-op repaints."""
-    return (s.connected, s.searching, s.host, s.ra, s.dec, s.tracking_mode,
-            s.slewing, s.parked, s.at_home, s.error_code, s.rate_label,
-            s.brightness_index, s.menu_open, s.menu_index, s.menu_confirm,
-            s.update_msg)
+    return (s.connected, s.searching, s.host, s.self_ip, s.ssid, s.ra, s.dec,
+            s.tracking_mode, s.slewing, s.parked, s.at_home, s.error_code,
+            s.rate_label, s.brightness_index, s.menu_open, s.menu_index,
+            s.menu_confirm, s.update_msg)

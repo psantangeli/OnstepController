@@ -43,6 +43,17 @@ _UPDATE_RESTART_DELAY = 1.5
 _UPDATE_RESULT_DELAY = 2.5
 
 
+def _wifi_ssid() -> str:
+    """Best-effort current WiFi SSID (Linux/Pi via iwgetid). '' if unknown."""
+    import subprocess
+    try:
+        out = subprocess.run(["iwgetid", "-r"], capture_output=True, text=True,
+                             timeout=2.0)
+        return out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
 class CommsWorker:
     """Runs on the comms thread: command dispatch + status polling + reconnect."""
 
@@ -67,6 +78,7 @@ class CommsWorker:
         self.menu_open = False
         self.menu_index = 0
         self.menu_confirm = False
+        self._next_netinfo = 0.0   # when to next refresh the Pi's own IP/SSID
 
     def run(self) -> None:
         self.shared.update(rate_index=self.rate_index,
@@ -75,17 +87,29 @@ class CommsWorker:
                            brightness_index=self.brightness_index)
         next_poll = 0.0
         while not self.stop_event.is_set():
+            # ALWAYS handle input first, so the buttons work even while the mount
+            # is missing -- otherwise a search loop locks the user out.
+            self._drain_actions()
+
+            # While the settings menu is open, pause everything mount-related (no
+            # discovery, no connect, no polling). This is the "stop scanning" the
+            # user can trigger any time by pressing KEY2.
+            if self.menu_open:
+                time.sleep(0.02)
+                continue
+
             if not self.client.connected:
+                self._publish_self_network()   # show the Pi's own IP/SSID while searching
                 # (Re)discover the mount if we have no target, or the current one
                 # has failed repeatedly (we may have changed networks).
                 if not self.client.host or self._fail_count >= REDISCOVER_AFTER:
                     if not self._discover():
-                        self.client.sleep_backoff()
+                        self._idle_wait(self.client.next_backoff())
                         continue
                 if not self.client.connect():
                     self._fail_count += 1
                     self.shared.update(connected=False)
-                    self.client.sleep_backoff()
+                    self._idle_wait(self.client.next_backoff())
                     continue
                 self._fail_count = 0
                 self.shared.update(connected=True, searching=False,
@@ -93,9 +117,7 @@ class CommsWorker:
                 # Push current rate to the mount on (re)connect.
                 self._safe(lambda: self.client.send(protocol.rate(self._rate_code())))
                 next_poll = 0.0
-
-            # Drain any pending input actions quickly (motion must feel instant).
-            self._drain_actions()
+                continue
 
             now = time.monotonic()
             if now >= next_poll:
@@ -108,6 +130,28 @@ class CommsWorker:
         # Best-effort stop-all on shutdown.
         self._safe(lambda: self.client.send(protocol.STOP_ALL))
         self.client.close()
+
+    def _idle_wait(self, duration: float) -> None:
+        """Wait up to ``duration`` seconds while still handling input, so a button
+        press (e.g. KEY2 to open the menu) is acted on promptly instead of being
+        stuck behind a long reconnect backoff."""
+        end = time.monotonic() + duration
+        while not self.stop_event.is_set():
+            self._drain_actions()
+            if self.menu_open or time.monotonic() >= end:
+                return
+            time.sleep(0.03)
+
+    def _publish_self_network(self) -> None:
+        """Show the Pi's own IP + WiFi SSID while disconnected, so the user can
+        see where the handset actually is (no SSH needed). Refreshed ~every 5 s."""
+        now = time.monotonic()
+        if now < self._next_netinfo:
+            return
+        self._next_netinfo = now + 5.0
+        from . import discovery
+        ip = discovery._local_ipv4() or ""
+        self.shared.update(self_ip=ip, ssid=_wifi_ssid())
 
     # --- discovery ------------------------------------------------------
 
