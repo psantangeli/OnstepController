@@ -15,11 +15,11 @@ from .state import MountState
 log = logging.getLogger(__name__)
 
 # The display is rendered MONOCHROME (grey on black) so it stays legible behind a
-# red night-vision filter -- no hues, state is shown by text and grey intensity.
-# Base grey levels (at full brightness); scaled by the current brightness factor.
-_INK = 255      # primary text
-_DIM = 140      # labels / secondary
-_FAINT = 80     # divider lines / inactive flags
+# red night-vision filter -- no hues. All text/lines render at a SINGLE intensity
+# (scaled by the brightness setting); there is no dim/secondary level, so nothing
+# is hard to read. State that used to be shown by dimness (inactive flags) is now
+# shown by presence/absence instead.
+_INK = 255
 _BLACK = (0, 0, 0)
 
 #: Settings-menu rows (extensible). Shared with main.py.
@@ -73,29 +73,27 @@ class Display:
         from luma.core.render import canvas
 
         factor = self._factor(s.brightness_index)
-        ink = _grey(_INK, factor)
-        dim = _grey(_DIM, factor)
-        faint = _grey(_FAINT, factor)
+        ink = _grey(_INK, factor)   # the single text/line intensity
 
         with canvas(self._device) as draw:
             draw.rectangle(self._device.bounding_box, fill=_BLACK)
             if s.update_msg:
-                self._paint_message(draw, "SOFTWARE UPDATE", s.update_msg, ink, dim, faint)
+                self._paint_message(draw, "SOFTWARE UPDATE", s.update_msg, ink)
             elif s.menu_open:
-                self._paint_menu(draw, s, ink, dim, faint)
+                self._paint_menu(draw, s, ink)
             else:
-                self._paint_status(draw, s, ink, dim, faint)
+                self._paint_status(draw, s, ink)
 
-    def _paint_message(self, draw, title, message, ink, dim, faint) -> None:
+    def _paint_message(self, draw, title, message, ink) -> None:
         f_small, f_med, f_big, f_label = self._fonts
         draw.text((6, 4), title, font=f_med, fill=ink)
-        draw.line((0, 30, 240, 30), fill=faint)
+        draw.line((0, 30, 240, 30), fill=ink)
         y = 60
         for line in str(message).split("\n"):
             draw.text((6, y), line, font=f_med, fill=ink)
             y += 28
 
-    def _paint_status(self, draw, s: MountState, ink, dim, faint) -> None:
+    def _paint_status(self, draw, s: MountState, ink) -> None:
         f_small, f_med, f_big, f_label = self._fonts
 
         # Title bar: connection / search / error -- conveyed by text, not colour.
@@ -108,52 +106,52 @@ class Display:
         else:
             draw.text((6, 4), "ONSTEP", font=f_med, fill=ink)
             if s.host:
-                draw.text((104, 9), s.host, font=f_label, fill=dim)
-        draw.line((0, 30, 240, 30), fill=faint)
+                draw.text((104, 9), s.host, font=f_label, fill=ink)
+        draw.line((0, 30, 240, 30), fill=ink)
 
         # Coordinates (the headline data).
-        draw.text((6, 42), "RA", font=f_label, fill=dim)
+        draw.text((6, 42), "RA", font=f_label, fill=ink)
         draw.text((6, 58), s.ra, font=f_big, fill=ink)
-        draw.text((6, 96), "DEC", font=f_label, fill=dim)
+        draw.text((6, 96), "DEC", font=f_label, fill=ink)
         draw.text((6, 112), s.dec, font=f_big, fill=ink)
 
-        draw.line((0, 150, 240, 150), fill=faint)
+        draw.line((0, 150, 240, 150), fill=ink)
 
         # Slew rate (left) and tracking mode (right).
-        draw.text((6, 156), "RATE", font=f_label, fill=dim)
+        draw.text((6, 156), "RATE", font=f_label, fill=ink)
         draw.text((6, 170), s.rate_label or "--", font=f_med, fill=ink)
 
-        draw.text((124, 156), "TRACK", font=f_label, fill=dim)
-        trk_off = s.tracking_mode.strip().lower() in ("", "off")
-        draw.text((124, 170), s.tracking_mode or "--", font=f_med,
-                  fill=dim if trk_off else ink)
+        draw.text((124, 156), "TRACK", font=f_label, fill=ink)
+        draw.text((124, 170), s.tracking_mode or "--", font=f_med, fill=ink)
 
-        # Status flags row: bright when active, faint when not.
+        # Status flags row: only the ACTIVE flags are shown (all at full ink).
         y = 212
-        draw.text((6, y), "SLEW", font=f_small, fill=ink if s.slewing else faint)
-        draw.text((92, y), "HOME", font=f_small, fill=ink if s.at_home else faint)
-        draw.text((178, y), "PARK", font=f_small, fill=ink if s.parked else faint)
+        if s.slewing:
+            draw.text((6, y), "SLEW", font=f_small, fill=ink)
+        if s.at_home:
+            draw.text((92, y), "HOME", font=f_small, fill=ink)
+        if s.parked:
+            draw.text((178, y), "PARK", font=f_small, fill=ink)
 
-    def _paint_menu(self, draw, s: MountState, ink, dim, faint) -> None:
+    def _paint_menu(self, draw, s: MountState, ink) -> None:
         f_small, f_med, f_big, f_label = self._fonts
 
         draw.text((6, 4), "SETTINGS", font=f_med, fill=ink)
-        draw.line((0, 30, 240, 30), fill=faint)
+        draw.line((0, 30, 240, 30), fill=ink)
 
         y = 50
         for i, item in enumerate(MENU_ITEMS):
             selected = (i == s.menu_index)
-            colour = ink if selected else dim
-            marker = ">" if selected else " "
-            draw.text((6, y), f"{marker} {item}", font=f_med, fill=colour)
+            marker = ">" if selected else " "   # selection shown by the marker
+            draw.text((6, y), f"{marker} {item}", font=f_med, fill=ink)
             draw.text((150, y), self._menu_value(item, s, selected),
-                      font=f_med, fill=colour)
+                      font=f_med, fill=ink)
             y += 28
 
         # Footer: controls hint.
-        draw.line((0, 192, 240, 192), fill=faint)
-        draw.text((6, 200), "Up/Dn select, L/R change", font=f_small, fill=dim)
-        draw.text((6, 220), "KEY2 or center: exit", font=f_small, fill=dim)
+        draw.line((0, 192, 240, 192), fill=ink)
+        draw.text((6, 200), "Up/Dn select, L/R change", font=f_small, fill=ink)
+        draw.text((6, 220), "KEY2 or center: exit", font=f_small, fill=ink)
 
     def _menu_value(self, item: str, s: MountState, selected: bool) -> str:
         if item == "Tracking":

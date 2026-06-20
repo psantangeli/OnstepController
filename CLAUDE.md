@@ -86,9 +86,11 @@ release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and 
   `Action`s on the queue. Joystick = hold-to-move/release-to-stop. **KEY2** emits
   `MENU` (toggle settings menu); KEY1/KEY3 are slew rate down/up.
 - `onstep_handset/display.py` — luma.lcd ST7789 wrapper + `render(state)`.
-  **Monochrome** (grey on black, for a red night-vision filter); all greys are
-  scaled by the current brightness factor. Renders the status screen or, when
-  `menu_open`, the settings menu. `MENU_ITEMS` lives here (imported by main.py).
+  **Monochrome** (grey on black, for a red night-vision filter), rendered at a
+  **single intensity** (`_INK` scaled by the brightness factor) — no dim level, so
+  all text reads equally. State that can't use dimness shows by presence/absence
+  (inactive status flags aren't drawn; menu selection uses a `>` marker). Renders
+  the status screen or, when `menu_open`, the settings menu. `MENU_ITEMS` here.
 - `onstep_handset/settings.py` — tiny JSON persistence for user-set values
   (brightness), to `.ui_settings.json`. Separate from `config.yaml` (committed
   defaults) because these change on the device and must stick across restarts.
