@@ -233,8 +233,9 @@ def _load_fonts():
         except TypeError:
             return ImageFont.load_default()
 
-    # small, medium, big (coords), label
-    fonts = truetype(14), truetype(20), truetype(28), truetype(12)
+    # small, medium, big (coords), label -- bumped up so the smaller text is
+    # readable on the 240x240 panel (still fits; see _paint_* layouts).
+    fonts = truetype(16), truetype(20), truetype(28), truetype(15)
     if any(getattr(f, "path", None) is None for f in fonts):
         log.warning("TrueType fonts unavailable (install libfreetype6 + "
                     "fonts-dejavu-core for larger text); using default font")
