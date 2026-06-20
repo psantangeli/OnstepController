@@ -42,7 +42,7 @@ class Display:
         from luma.core.interface.serial import spi
         from luma.lcd.device import st7789
 
-        self._brightness_levels = brightness_levels or [0.35, 0.65, 1.0]
+        self._brightness_levels = brightness_levels or [0.55, 0.78, 1.0]
         # Backlight (BL) is managed by the *device* (gpio_LIGHT), not the serial
         # bus. On the Waveshare 1.3" HAT BL is active-high, so active_low=False.
         serial = spi(port=0, device=0, gpio_DC=dc, gpio_RST=rst, bus_speed_hz=spi_hz)
