@@ -1,3 +1,7 @@
+# REFERENCE TEMPLATE ONLY. scripts/install.sh GENERATES the real unit with paths
+# and user matching your actual checkout -- prefer running install.sh. The
+# User=/paths below assume user 'peter' and ~/onstepController; edit if you
+# install this by hand.
 [Unit]
 Description=OnStep WiFi hand controller
 # Ordering + requirement so the app starts once the network is actually up.

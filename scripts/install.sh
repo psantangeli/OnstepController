@@ -39,9 +39,28 @@ sudo -u "$RUN_USER" python3 -m venv --system-site-packages "$REPO_DIR/.venv"
 sudo -u "$RUN_USER" "$REPO_DIR/.venv/bin/pip" install --upgrade pip wheel
 sudo -u "$RUN_USER" "$REPO_DIR/.venv/bin/pip" install -r "$REPO_DIR/requirements.txt"
 
-# 4. Install + enable the systemd service.
-echo "==> Installing systemd service"
-install -m 644 "$REPO_DIR/systemd/${SERVICE}.service" "/etc/systemd/system/${SERVICE}.service"
+# 4. Generate + enable the systemd service. We GENERATE it (rather than copy the
+#    template) so the paths/user always match THIS checkout -- no matter what the
+#    clone directory is called (e.g. OnstepController vs onstepController) or who
+#    runs it. The static systemd/*.service is just a reference template.
+echo "==> Installing systemd service ($REPO_DIR, user $RUN_USER)"
+cat > "/etc/systemd/system/${SERVICE}.service" <<UNIT
+[Unit]
+Description=OnStep WiFi hand controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=$RUN_USER
+WorkingDirectory=$REPO_DIR
+ExecStart=$REPO_DIR/.venv/bin/python -m onstep_handset.main
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+UNIT
 systemctl daemon-reload
 systemctl enable "$SERVICE"
 
