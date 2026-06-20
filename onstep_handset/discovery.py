@@ -10,6 +10,8 @@ expensive cascade and confirms every candidate is really OnStep:
      libnss-mdns (default on Raspberry Pi OS). Sub-second when it works.
   3. **Subnet sweep** -- scan the local /24 (or detected prefix) for port 9999,
      confirming each open host with ``:GVP#``. Board-agnostic; the reliable path.
+     The scan is single-threaded (one non-blocking ``select`` loop), so it stays
+     gentle on the Pi Zero's single ARMv6 core -- no thread-pool CPU storm.
 
 Confirmation always uses the real control channel (TCP 9999 + ``:GVP#`` ->
 ``On-Step#``), so we never hand back a host that isn't actually an OnStep.
@@ -17,14 +19,21 @@ Confirmation always uses the real control channel (TCP 9999 + ``:GVP#`` ->
 
 from __future__ import annotations
 
-import concurrent.futures
+import errno
 import ipaddress
 import logging
 import os
+import selectors
 import socket
 import subprocess
+import time
 
 from . import protocol
+
+# connect_ex() return codes meaning "connection in progress" (non-blocking).
+_INPROGRESS = {errno.EINPROGRESS, errno.EWOULDBLOCK}
+if hasattr(errno, "WSAEWOULDBLOCK"):       # Windows
+    _INPROGRESS.add(errno.WSAEWOULDBLOCK)
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +79,7 @@ def discover(
     subnet_prefix: int = 24,
     scan_timeout: float = 0.3,
     cache_path: str | None = None,
-    max_workers: int = 64,
+    max_workers: int = 256,
 ) -> str | None:
     """Resolve the OnStep IP. Returns the address, or None if not found.
 
@@ -116,22 +125,76 @@ def _resolve_hostname(name: str, port: int) -> str | None:
 
 
 def _sweep(network, port: int, scan_timeout: float, max_workers: int) -> str | None:
+    """Find an OnStep on the network with minimal CPU.
+
+    Single-threaded: a non-blocking ``connect`` scan (one ``select`` loop, gentle
+    on a single-core Pi Zero -- no thread pool) finds which hosts have the port
+    open, then the few open hosts are confirmed sequentially with ``:GVP#``.
+    ``max_workers`` bounds how many sockets are opened at once (fd safety).
+    """
     hosts = [str(h) for h in network.hosts()]
     if not hosts:
         return None
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(identify, h, port, scan_timeout): h for h in hosts}
-        try:
-            for fut in concurrent.futures.as_completed(futures):
-                try:
-                    if fut.result():
-                        return futures[fut]
-                except Exception:  # pragma: no cover - defensive
-                    continue
-        finally:
-            for fut in futures:
-                fut.cancel()
+    for batch in _chunks(hosts, max(1, max_workers)):
+        for ip in _open_ports(batch, port, scan_timeout):
+            if identify(ip, port, timeout=scan_timeout * 3):
+                return ip
     return None
+
+
+def _chunks(seq, n):
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
+def _open_ports(hosts, port: int, timeout: float) -> list[str]:
+    """Hosts (of ``hosts``) with ``port`` open, via one non-blocking select loop."""
+    sel = selectors.DefaultSelector()
+    pending: dict = {}
+    opened: list[str] = []
+    try:
+        for ip in hosts:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setblocking(False)
+            try:
+                rc = sock.connect_ex((ip, port))
+            except OSError:
+                sock.close()
+                continue
+            if rc == 0:                       # connected immediately
+                opened.append(ip)
+                sock.close()
+            elif rc in _INPROGRESS:           # will complete asynchronously
+                sel.register(sock, selectors.EVENT_WRITE, ip)
+                pending[sock] = ip
+            else:                             # refused / unreachable right away
+                sock.close()
+
+        deadline = time.monotonic() + timeout
+        while pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            events = sel.select(timeout=remaining)
+            if not events:
+                break
+            for key, _mask in events:
+                sock, ip = key.fileobj, key.data
+                # SO_ERROR == 0 means the connection succeeded (port open).
+                if sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR) == 0:
+                    opened.append(ip)
+                sel.unregister(sock)
+                sock.close()
+                pending.pop(sock, None)
+    finally:
+        for sock in list(pending):
+            try:
+                sel.unregister(sock)
+            except Exception:
+                pass
+            sock.close()
+        sel.close()
+    return opened
 
 
 # --- local network detection -------------------------------------------------

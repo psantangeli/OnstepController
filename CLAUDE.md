@@ -78,8 +78,10 @@ release the GIL, so the UI isn't starved during a poll. Keep poll ~1–3 Hz and 
   `:Q#`, `:hC#`).
 - `onstep_handset/discovery.py` — finds the mount when `mount.host == "auto"`.
   Cascade: cached IP → mDNS hostname (`onstep.local`) → subnet sweep, confirming
-  every candidate with `:GVP#` (`On-Step#`). `HostResolver` wraps config (a fixed
-  IP is returned as-is). Discovered IP is cached to `.discovered_host`.
+  every candidate with `:GVP#` (`On-Step#`). The sweep is **single-threaded** (a
+  non-blocking `select` connect scan, not a thread pool) so it doesn't peg the Pi
+  Zero's single core. `HostResolver` wraps config (a fixed IP is returned as-is).
+  Discovered IP is cached to `.discovered_host`.
 - `onstep_handset/state.py` — frozen `MountState` snapshot + `SharedState`
   (single `Lock`, comms thread writes, UI reads).
 - `onstep_handset/inputs.py` — gpiozero `Button`s (active-low, `pull_up=True`) →
