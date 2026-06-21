@@ -72,9 +72,12 @@ Other flags: `--hostname <name>` (default `onstep`), `--port <n>` (9999),
 
 ## Notes / troubleshooting
 
+- **Multiple adapters** — the sweep covers **every** local IPv4 adapter, so a PC
+  with two WiFi adapters on different subnets is fully searched; no need to pick
+  one.
 - **Subnet size** — when the netmask can't be auto-detected on Windows the sweep
-  uses a **/24** (covers almost all home/field networks). For a larger network
-  pass `--prefix 23`/`22`/etc.
+  uses a **/24** per adapter (covers almost all home/field networks). For a larger
+  network pass `--prefix 23`/`22`/etc.
 - **Driver only accepts a numeric IP?** Some ASCOM dialogs reject hostnames. If
   yours does, read the current IP from `%ProgramData%\OnStep\discovered_host`, or
   ask for the variant that writes the IP straight into the driver's ASCOM profile.

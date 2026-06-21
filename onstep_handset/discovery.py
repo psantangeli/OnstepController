@@ -8,10 +8,11 @@ expensive cascade and confirms every candidate is really OnStep:
   2. **mDNS hostname** -- ``onstep.local`` / ``onstepsws.local``. Works only when
      the mount is an ESP32 with mDNS on (OnStepX default) AND the Pi has avahi/
      libnss-mdns (default on Raspberry Pi OS). Sub-second when it works.
-  3. **Subnet sweep** -- scan the local /24 (or detected prefix) for port 9999,
-     confirming each open host with ``:GVP#``. Board-agnostic; the reliable path.
-     The scan is single-threaded (one non-blocking ``select`` loop), so it stays
-     gentle on the Pi Zero's single ARMv6 core -- no thread-pool CPU storm.
+  3. **Subnet sweep** -- scan EVERY local IPv4 adapter's network (a host PC may
+     have several, e.g. two WiFi adapters) for port 9999, confirming each open
+     host with ``:GVP#``. Board-agnostic; the reliable path. The scan is
+     single-threaded (one non-blocking ``select`` loop), so it stays gentle on
+     the Pi Zero's single ARMv6 core -- no thread-pool CPU storm.
 
 Confirmation always uses the real control channel (TCP 9999 + ``:GVP#`` ->
 ``On-Step#``), so we never hand back a host that isn't actually an OnStep.
@@ -99,19 +100,21 @@ def discover(
             _write_cache(cache_path, ip)
             return ip
 
-    # 3. Subnet sweep.
-    network = _local_network(subnet_prefix)
-    if network is None:
-        log.warning("discovery: could not determine local network; sweep skipped")
+    # 3. Subnet sweep -- across EVERY local IPv4 adapter, not just the default
+    #    route (a host PC may have e.g. two WiFi adapters on different subnets).
+    networks = _local_networks(subnet_prefix)
+    if not networks:
+        log.warning("discovery: could not determine any local network; sweep skipped")
         return None
-    log.info("discovery: sweeping %s for OnStep on port %d", network, port)
-    ip = _sweep(network, port, scan_timeout, max_workers)
-    if ip:
-        log.info("discovery: found OnStep at %s", ip)
-        _write_cache(cache_path, ip)
-    else:
-        log.warning("discovery: no OnStep found on %s", network)
-    return ip
+    for network in networks:
+        log.info("discovery: sweeping %s for OnStep on port %d", network, port)
+        ip = _sweep(network, port, scan_timeout, max_workers)
+        if ip:
+            log.info("discovery: found OnStep at %s", ip)
+            _write_cache(cache_path, ip)
+            return ip
+    log.warning("discovery: no OnStep found on %s", ", ".join(str(n) for n in networks))
+    return None
 
 
 def _resolve_hostname(name: str, port: int) -> str | None:
@@ -199,18 +202,39 @@ def _open_ports(hosts, port: int, timeout: float) -> list[str]:
 
 # --- local network detection -------------------------------------------------
 
-def _local_network(default_prefix: int):
-    """Best-effort CIDR for the Pi's primary IPv4 interface."""
-    ip = _local_ipv4()
-    if ip is None:
-        return None
-    prefix = _prefix_for_ip(ip)
-    if prefix is None:
-        prefix = default_prefix
+def _local_networks(default_prefix: int) -> list:
+    """CIDR networks for EVERY local IPv4 adapter (one PC may have several, e.g.
+    two WiFi adapters on different subnets). Loopback/APIPA are skipped. Dedupes
+    overlapping networks. Prefix from the OS where we can read it, else default."""
+    nets: dict = {}
+    for ip in _local_ipv4_addresses():
+        if ip.startswith("127.") or ip.startswith("169.254."):
+            continue
+        prefix = _prefix_for_ip(ip) or default_prefix
+        try:
+            net = ipaddress.ip_network(f"{ip}/{prefix}", strict=False)
+        except ValueError:
+            continue
+        nets.setdefault(str(net), net)
+    return list(nets.values())
+
+
+def _local_ipv4_addresses() -> set:
+    """Best-effort set of all local IPv4 addresses across every adapter."""
+    ips: set = set()
+    # Default-route source IP (the one adapter the connect-trick picks).
+    dr = _local_ipv4()
+    if dr:
+        ips.add(dr)
+    # Every address bound to the hostname -- on Windows this returns all adapters.
     try:
-        return ipaddress.ip_network(f"{ip}/{prefix}", strict=False)
-    except ValueError:
-        return None
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    # Linux: `ip -o -4 addr` enumerates everything reliably (incl. prefixes).
+    ips.update(_ip_cmd_addresses())
+    return ips
 
 
 def _local_ipv4() -> str | None:
@@ -225,17 +249,34 @@ def _local_ipv4() -> str | None:
         sock.close()
 
 
-def _prefix_for_ip(ip: str) -> int | None:
-    """Read the netmask prefix for ``ip`` from ``ip -o -4 addr`` (Linux)."""
+def _ip_cmd_lines() -> list:
+    """Lines of `ip -o -4 addr show` (Linux), or [] elsewhere/on failure."""
     try:
         out = subprocess.run(
             ["ip", "-o", "-4", "addr", "show"],
             capture_output=True, text=True, timeout=2.0,
         ).stdout
+        return out.splitlines()
     except (OSError, subprocess.SubprocessError):
-        return None
-    for line in out.splitlines():
+        return []
+
+
+def _ip_cmd_addresses() -> set:
+    """All IPv4 addresses from `ip -o -4 addr` (Linux). Empty elsewhere."""
+    found: set = set()
+    for line in _ip_cmd_lines():
         # e.g. "3: wlan0    inet 192.168.1.42/24 brd ... scope global wlan0"
+        toks = line.split()
+        if "inet" in toks:
+            cidr = toks[toks.index("inet") + 1] if toks.index("inet") + 1 < len(toks) else ""
+            if "/" in cidr:
+                found.add(cidr.split("/", 1)[0])
+    return found
+
+
+def _prefix_for_ip(ip: str) -> int | None:
+    """Netmask prefix for ``ip`` from `ip -o -4 addr` (Linux); None elsewhere."""
+    for line in _ip_cmd_lines():
         for token in line.split():
             if token.startswith(f"{ip}/"):
                 try:

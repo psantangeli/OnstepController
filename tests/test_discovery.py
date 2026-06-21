@@ -133,3 +133,31 @@ def test_sweep_no_match():
     s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
     net = ipaddress.ip_network("127.0.0.0/30")
     assert discovery._sweep(net, port, scan_timeout=0.2, max_workers=4) is None
+
+
+# --- multi-adapter sweep -----------------------------------------------------
+
+def test_local_networks_covers_all_adapters(monkeypatch):
+    monkeypatch.setattr(discovery, "_local_ipv4_addresses",
+                        lambda: {"192.168.1.5", "10.0.0.5", "127.0.0.1", "169.254.7.7"})
+    monkeypatch.setattr(discovery, "_prefix_for_ip", lambda ip: None)  # -> default /24
+    nets = sorted(str(n) for n in discovery._local_networks(24))
+    # Both real adapters; loopback (127.) and APIPA (169.254.) excluded.
+    assert nets == ["10.0.0.0/24", "192.168.1.0/24"]
+
+
+def test_discover_sweeps_every_network(monkeypatch):
+    import ipaddress
+    n1 = ipaddress.ip_network("192.168.1.0/24")
+    n2 = ipaddress.ip_network("10.0.0.0/24")
+    monkeypatch.setattr(discovery, "_local_networks", lambda prefix: [n1, n2])
+    swept = []
+
+    def fake_sweep(network, port, scan_timeout, max_workers):
+        swept.append(str(network))
+        return "10.0.0.42" if network == n2 else None   # OnStep is on the 2nd adapter
+
+    monkeypatch.setattr(discovery, "_sweep", fake_sweep)
+    found = discovery.discover(9999, hostnames=[], subnet_prefix=24, cache_path=None)
+    assert found == "10.0.0.42"
+    assert swept == ["192.168.1.0/24", "10.0.0.0/24"]   # tried both, in order
